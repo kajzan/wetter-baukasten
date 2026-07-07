@@ -1,26 +1,42 @@
 /*
- * Wetter-Wächter-Dienst – Phase 1: Grundgerüst + Browser-Push-Beweis
- * ==================================================================
- * Läuft als Cloudflare Worker (Gratis-Stufe).
- *   GET  /                  -> Test-Seite (Browser-Push ausprobieren)
+ * Wetter-Wächter-Dienst (Cloudflare Worker, Gratis-Stufe)
+ * =======================================================
+ *   GET  /                  -> die App (Ort wählen, Regeln, Aktivieren)
  *   GET  /sw.js             -> Service Worker (empfängt Push im Browser)
- *   GET  /api/status        -> Lebenszeichen als JSON
- *   GET  /api/vapid-public  -> öffentlicher VAPID-Schlüssel (zum Abonnieren)
- *   POST /api/test-push-web -> schickt sofort einen Browser-Push an das Abo
- *   Zeitplan (stündlich)    -> Platzhalter; Wetter-Prüfung folgt in Phase 2/3
+ *   GET  /manifest.json     -> PWA-Manifest ("Zum Startbildschirm")
+ *   GET  /icon.svg          -> App-Symbol
+ *   GET  /api/status        -> Lebenszeichen
+ *   GET  /api/vapid-public  -> öffentlicher VAPID-Schlüssel
+ *   POST /api/vorschau      -> Regel-Treffer + 4-Tage-Wetter (dieselbe Logik wie der Wächter)
+ *   POST /api/aktivieren    -> Abo + Ort + Regeln speichern, Bestätigungs-Push
+ *   POST /api/deaktivieren  -> Abo austragen
+ *   Zeitplan (stündlich)    -> Wetter prüfen, bei Treffern Push senden (mit Doppel-Schutz)
  *
- * Datenschutz-Grundsätze (gelten für alle Ausbaustufen):
- *   - Koordinaten nur grob (1 Nachkommastelle)
- *   - Push-Nachrichten enthalten nie Ortsangaben
- *   - geheime Schlüssel stehen nur als Cloudflare-Secret, nie im Code/Log
+ * Bausteine:  logik.js  (Regel-Logik, 1:1 aus waechter.py, paritätsgetestet)
+ *             webpush.js (Web-Push-Verschlüsselung + VAPID, referenzgetestet)
+ *             seite.js  (die App-Oberfläche)
+ *
+ * Speicher (KV-Binding SPEICHER, optional bis eingerichtet):
+ *   nutzer:<kennung>                    -> { abo, lat, lon, regeln, angelegt }
+ *   gesendet:<kennung>:<regel>:<datum>  -> "1" (läuft nach 3 Tagen automatisch ab)
+ *
+ * Datenschutz: Koordinaten nur grob (Rundung zusätzlich serverseitig),
+ * Push-Texte ohne Ortsangaben, keine Namen/Konten, Kennung = Prüfsumme des
+ * Push-Endpunkts (keine frei erfundenen Nutzerdaten).
  */
 
+import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
+         normalisiereRegeln, rundeKoordinate } from "./logik.js";
 import { sendeWebPush } from "./webpush.js";
+import { appSeite } from "./seite.js";
 
-// Öffentlicher VAPID-Schlüssel (darf öffentlich sein). Der zugehörige private
-// Schlüssel liegt ausschließlich als Cloudflare-Secret VAPID_PRIVATE.
+// Öffentlicher VAPID-Schlüssel (darf öffentlich sein). Der private liegt
+// ausschließlich als Cloudflare-Secret VAPID_PRIVATE.
 const VAPID_PUBLIC = "BGGFfZkFxEpdcdg4xMGoR3VOqtmFQ4PQJ368iRL7q6oGBISDRvSUhzdorcwaVbdQIHg7kq5dXGa_pYJmGpZ2JXk";
 const VAPID_SUBJECT = "mailto:wetter-waechter@users.noreply.github.com";
+
+const MAX_NUTZER = 500;            // Missbrauchs-Bremse der Vorschau-Version
+const GESENDET_ABLAUF_SEK = 3 * 24 * 3600;
 
 const JSON_KOPF = {
   "Content-Type": "application/json; charset=utf-8",
@@ -29,12 +45,12 @@ const JSON_KOPF = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function jsonAntwort(daten, status = 200) {
-  return new Response(JSON.stringify(daten), { status, headers: JSON_KOPF });
-}
+const jsonAntwort = (daten, status = 200) =>
+  new Response(JSON.stringify(daten), { status, headers: JSON_KOPF });
 
 /* Nur echte Push-Dienste zulassen (Schutz gegen Missbrauch als Weiterleitung). */
 function erlaubterPushEndpunkt(endpunkt) {
+  if (typeof endpunkt !== "string" || endpunkt.length > 1024) return false;
   let host;
   try { host = new URL(endpunkt).host; } catch { return false; }
   return host === "fcm.googleapis.com"
@@ -44,15 +60,31 @@ function erlaubterPushEndpunkt(endpunkt) {
       || host.endsWith(".notify.windows.com");
 }
 
-/* Service Worker: empfängt den Push und zeigt die Benachrichtigung an. */
+function aboGueltig(abo) {
+  return abo && erlaubterPushEndpunkt(abo.endpoint)
+      && abo.keys && typeof abo.keys.p256dh === "string" && typeof abo.keys.auth === "string"
+      && abo.keys.p256dh.length < 200 && abo.keys.auth.length < 100;
+}
+
+/* Anonyme Kennung: Prüfsumme des Push-Endpunkts. */
+async function kennungVon(endpunkt) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpunkt));
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
+async function sendeNachricht(abo, titel, text, env) {
+  const inhalt = JSON.stringify({ title: titel, body: text, tag: "wetter-waechter" });
+  return sendeWebPush(abo, inhalt, VAPID_PUBLIC, env.VAPID_PRIVATE, VAPID_SUBJECT);
+}
+
 const SERVICE_WORKER = `
 self.addEventListener("push", (event) => {
   let daten = { title: "Wetter-Wächter", body: "" };
   try { daten = event.data.json(); } catch (e) { if (event.data) daten.body = event.data.text(); }
   event.waitUntil(self.registration.showNotification(daten.title || "Wetter-Wächter", {
     body: daten.body || "",
-    icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%A6%EF%B8%8F%3C/text%3E%3C/svg%3E",
-    tag: daten.tag || undefined,
+    icon: "/icon.svg",
+    badge: "/icon.svg",
     data: daten,
   }));
 });
@@ -62,165 +94,190 @@ self.addEventListener("notificationclick", (event) => {
 });
 `;
 
-/* Kleine, in sich geschlossene Test-Seite (kein externer Code, kein Tracking). */
-const TEST_SEITE = `<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wetter-Wächter-Dienst</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-         line-height:1.5; background:#f4f6f8; color:#1c2733; }
-  @media (prefers-color-scheme: dark){ body{ background:#10161d; color:#e8edf2; } .karte{ background:#1a232e; border-color:#2c3947; } code{ background:#0d1218; } }
-  main { max-width:560px; margin:0 auto; padding:20px 16px 60px; }
-  h1 { font-size:1.3rem; }
-  .karte { background:#fff; border:1px solid #dde4ea; border-radius:12px; padding:16px; margin:14px 0; }
-  .ok { color:#15803d; font-weight:600; }
-  ol { padding-left:20px; } li { margin:8px 0; }
-  button { border:0; border-radius:10px; padding:14px 16px; font-size:1rem; font-weight:600;
-           background:#2563eb; color:#fff; cursor:pointer; width:100%; }
-  #ergebnis { margin-top:12px; font-weight:600; white-space:pre-wrap; }
-  .hinweis { font-size:.86rem; color:#5b6b7b; }
-</style>
-</head>
-<body>
-<main>
-  <h1>🌦️ Wetter-Wächter-Dienst</h1>
-  <p><span class="ok">✅ Der Dienst läuft.</span> Diese Seite testet den Versand von
-  <b>Browser-Push</b> – die richtige App entsteht in den nächsten Schritten.</p>
+const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<rect width="100" height="100" rx="20" fill="#2563eb"/>
+<text x="50" y="50" font-size="58" text-anchor="middle" dominant-baseline="central">🌦️</text></svg>`;
 
-  <div class="karte">
-    <h2 style="font-size:1.05rem;margin-top:0">Browser-Push testen</h2>
-    <p>Ein Tipp genügt: Der Browser fragt nach Erlaubnis, danach kommt sofort eine Test-Nachricht.
-    <b>Keine Zusatz-App nötig.</b></p>
-    <p class="hinweis">📱 <b>iPhone/iPad:</b> vorher über das Teilen-Symbol „Zum Home-Bildschirm“ hinzufügen
-    und die Seite von dort öffnen – sonst erlaubt Apple keinen Push.</p>
-    <button id="anmelden" type="button">🔔 Benachrichtigungen erlauben & testen</button>
-    <div id="ergebnis"></div>
-  </div>
-</main>
-<script>
-const VAPID_PUBLIC = "${VAPID_PUBLIC}";
-
-function b64urlZuBytes(s) {
-  const pad = (4 - (s.length % 4)) % 4;
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
-  const roh = atob(b64);
-  return Uint8Array.from(roh, (c) => c.charCodeAt(0));
-}
-
-function zeige(text, gut) {
-  const e = document.getElementById("ergebnis");
-  e.textContent = text; e.style.color = gut ? "#15803d" : "#b91c1c";
-}
-
-document.getElementById("anmelden").addEventListener("click", async () => {
-  try {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      return zeige("Dieser Browser unterstützt leider keine Push-Nachrichten.", false);
-    }
-    zeige("Registriere …", true);
-    const reg = await navigator.serviceWorker.register("/sw.js");
-    await navigator.serviceWorker.ready;
-
-    const erlaubnis = await Notification.requestPermission();
-    if (erlaubnis !== "granted") {
-      return zeige("Ohne Erlaubnis können keine Nachrichten kommen. (Erlaubnis: " + erlaubnis + ")", false);
-    }
-
-    let abo = await reg.pushManager.getSubscription();
-    if (!abo) {
-      abo = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: b64urlZuBytes(VAPID_PUBLIC),
-      });
-    }
-
-    zeige("Sende Test-Nachricht …", true);
-    const antwort = await fetch("/api/test-push-web", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(abo),
-    });
-    const daten = await antwort.json();
-    if (antwort.ok && daten.ok) {
-      zeige("✅ Gesendet! Innerhalb weniger Sekunden sollte die Benachrichtigung erscheinen. 🎉", true);
-    } else {
-      zeige("⚠️ " + (daten.fehler || "Unbekannter Fehler."), false);
-    }
-  } catch (fehler) {
-    zeige("⚠️ Fehler: " + fehler.message, false);
-  }
+const MANIFEST = JSON.stringify({
+  name: "Wetter-Wächter",
+  short_name: "Wetter-Wächter",
+  description: "Meldet sich, wenn dein Wunsch-Wetter kommt.",
+  start_url: "/",
+  display: "standalone",
+  background_color: "#f4f6f8",
+  theme_color: "#2563eb",
+  icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
 });
-</script>
-</body>
-</html>`;
 
 export default {
   async fetch(anfrage, env, ctx) {
     const url = new URL(anfrage.url);
+    const pfad = url.pathname;
 
-    if (anfrage.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: JSON_KOPF });
+    if (anfrage.method === "OPTIONS") return new Response(null, { status: 204, headers: JSON_KOPF });
+
+    if (anfrage.method === "GET") {
+      if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC), {
+        headers: { "Content-Type": "text/html; charset=utf-8" } });
+      if (pfad === "/sw.js") return new Response(SERVICE_WORKER, {
+        headers: { "Content-Type": "application/javascript; charset=utf-8" } });
+      if (pfad === "/manifest.json") return new Response(MANIFEST, {
+        headers: { "Content-Type": "application/manifest+json" } });
+      if (pfad === "/icon.svg") return new Response(ICON_SVG, {
+        headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" } });
+      if (pfad === "/api/status") return jsonAntwort({
+        dienst: "wetter-waechter", phase: 2, status: "ok",
+        speicher: Boolean(env.SPEICHER), zeit: new Date().toISOString() });
+      if (pfad === "/api/vapid-public") return jsonAntwort({ vapidPublic: VAPID_PUBLIC });
     }
 
-    if (anfrage.method === "GET" && url.pathname === "/") {
-      return new Response(TEST_SEITE, {
-        status: 200,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-
-    if (anfrage.method === "GET" && url.pathname === "/sw.js") {
-      return new Response(SERVICE_WORKER, {
-        status: 200,
-        headers: { "Content-Type": "application/javascript; charset=utf-8" },
-      });
-    }
-
-    if (anfrage.method === "GET" && url.pathname === "/api/status") {
-      return jsonAntwort({ dienst: "wetter-waechter", phase: 1, status: "ok", zeit: new Date().toISOString() });
-    }
-
-    if (anfrage.method === "GET" && url.pathname === "/api/vapid-public") {
-      return jsonAntwort({ vapidPublic: VAPID_PUBLIC });
-    }
-
-    if (anfrage.method === "POST" && url.pathname === "/api/test-push-web") {
-      if (!env.VAPID_PRIVATE) {
-        return jsonAntwort({ fehler: "Der Schlüssel VAPID_PRIVATE ist im Dienst noch nicht hinterlegt." }, 500);
+    if (anfrage.method === "POST" && pfad === "/api/vorschau") {
+      let daten;
+      try { daten = await anfrage.json(); } catch { return jsonAntwort({ ok: false, fehler: "Ungültige Anfrage." }, 400); }
+      const lat = rundeKoordinate(daten.lat), lon = rundeKoordinate(daten.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return jsonAntwort({ ok: false, fehler: "Ungültige Koordinaten." }, 400);
       }
-      let abo;
-      try { abo = await anfrage.json(); } catch { return jsonAntwort({ fehler: "Ungültige Anfrage." }, 400); }
-      if (!abo || !abo.endpoint || !abo.keys || !abo.keys.p256dh || !abo.keys.auth) {
-        return jsonAntwort({ fehler: "Unvollständiges Abo (endpoint/keys fehlen)." }, 400);
-      }
-      if (!erlaubterPushEndpunkt(abo.endpoint)) {
-        return jsonAntwort({ fehler: "Unbekannter Push-Dienst – abgelehnt." }, 400);
-      }
+      let regeln;
+      try { regeln = normalisiereRegeln(daten.regeln); } catch (f) { return jsonAntwort({ ok: false, fehler: f.message }, 400); }
       try {
-        const inhalt = JSON.stringify({
-          title: "✅ Browser-Push funktioniert",
-          body: "Der Wetter-Wächter kann dir jetzt direkt aufs Handy schreiben – ganz ohne Zusatz-App.",
-          tag: "wetter-test",
+        const vorhersage = await holeVorhersage(lat, lon);
+        const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
+        const treffer = regeln.map((regel) => {
+          if (!regel.aktiv) return [];
+          const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
+          return Object.keys(gefunden).sort().map((datum) => ({
+            datum, text: blockZuText(datum, gefunden[datum]),
+          }));
         });
-        const antwort = await sendeWebPush(abo, inhalt, VAPID_PUBLIC, env.VAPID_PRIVATE, VAPID_SUBJECT);
-        if (antwort.ok || antwort.status === 201) return jsonAntwort({ ok: true });
-        let grund = "";
-        try { grund = (await antwort.text()).slice(0, 300); } catch { /* egal */ }
-        return jsonAntwort({ fehler: "Push-Dienst Status " + antwort.status + (grund ? " – " + grund : "") }, 502);
-      } catch (fehler) {
-        return jsonAntwort({ fehler: "Senden fehlgeschlagen: " + fehler.message }, 502);
+        return jsonAntwort({ ok: true, treffer, tage: tagesZusammenfassung(vorhersage) });
+      } catch (f) {
+        return jsonAntwort({ ok: false, fehler: "Wetterdaten gerade nicht verfügbar (" + f.message + ")." }, 502);
       }
     }
 
-    return jsonAntwort({ fehler: "Unbekannter Pfad." }, 404);
+    if (anfrage.method === "POST" && pfad === "/api/aktivieren") {
+      if (!env.VAPID_PRIVATE) return jsonAntwort({ ok: false, fehler: "Dienst noch nicht fertig eingerichtet (VAPID_PRIVATE fehlt)." }, 500);
+      let daten;
+      try { daten = await anfrage.json(); } catch { return jsonAntwort({ ok: false, fehler: "Ungültige Anfrage." }, 400); }
+      if (!aboGueltig(daten.abo)) return jsonAntwort({ ok: false, fehler: "Ungültiges Push-Abo." }, 400);
+      const lat = rundeKoordinate(daten.lat), lon = rundeKoordinate(daten.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return jsonAntwort({ ok: false, fehler: "Ungültige Koordinaten." }, 400);
+      }
+      let regeln;
+      try { regeln = normalisiereRegeln(daten.regeln); } catch (f) { return jsonAntwort({ ok: false, fehler: f.message }, 400); }
+
+      let gespeichert = false;
+      if (env.SPEICHER) {
+        const kennung = await kennungVon(daten.abo.endpoint);
+        const schluessel = "nutzer:" + kennung;
+        const schonDa = await env.SPEICHER.get(schluessel);
+        if (!schonDa) {
+          const bestand = await env.SPEICHER.list({ prefix: "nutzer:", limit: MAX_NUTZER });
+          if (bestand.keys.length >= MAX_NUTZER) {
+            return jsonAntwort({ ok: false, fehler: "Der Dienst ist momentan voll – bitte später erneut versuchen." }, 503);
+          }
+        }
+        await env.SPEICHER.put(schluessel, JSON.stringify({
+          abo: { endpoint: daten.abo.endpoint, keys: { p256dh: daten.abo.keys.p256dh, auth: daten.abo.keys.auth } },
+          lat, lon, regeln,
+          angelegt: schonDa ? JSON.parse(schonDa).angelegt : new Date().toISOString(),
+        }));
+        gespeichert = true;
+      }
+
+      // Bestätigung nur beim ersten Mal bzw. bei fehlendem Speicher als Test
+      try {
+        const text = gespeichert
+          ? "Alles eingerichtet! Ich prüfe ab jetzt stündlich, ob dein Wunsch-Wetter kommt."
+          : "Der Push-Weg funktioniert! (Die stündliche Überwachung startet, sobald der Speicher eingerichtet ist.)";
+        const antwort = await sendeNachricht(daten.abo, "🔔 Wetter-Wächter", text, env);
+        if (!antwort.ok && antwort.status !== 201) {
+          let grund = ""; try { grund = (await antwort.text()).slice(0, 200); } catch { /* egal */ }
+          return jsonAntwort({ ok: false, gespeichert, fehler: "Push-Dienst Status " + antwort.status + (grund ? " – " + grund : "") }, 502);
+        }
+      } catch (f) {
+        return jsonAntwort({ ok: false, gespeichert, fehler: "Senden fehlgeschlagen: " + f.message }, 502);
+      }
+      return jsonAntwort({ ok: true, gespeichert });
+    }
+
+    if (anfrage.method === "POST" && pfad === "/api/deaktivieren") {
+      let daten;
+      try { daten = await anfrage.json(); } catch { return jsonAntwort({ ok: false, fehler: "Ungültige Anfrage." }, 400); }
+      if (typeof daten.endpoint !== "string") return jsonAntwort({ ok: false, fehler: "endpoint fehlt." }, 400);
+      if (env.SPEICHER) {
+        const kennung = await kennungVon(daten.endpoint);
+        await env.SPEICHER.delete("nutzer:" + kennung);
+      }
+      return jsonAntwort({ ok: true });
+    }
+
+    return jsonAntwort({ ok: false, fehler: "Unbekannter Pfad." }, 404);
   },
 
+  /* Stündlicher Wächter-Lauf: alle Nutzer prüfen, bei Treffern Push senden. */
   async scheduled(ereignis, env, ctx) {
-    // Platzhalter: hier zieht in Phase 2/3 die stündliche Wetter-Prüfung ein
-    // (mit derselben Regel-Logik, die bereits gegen waechter.py getestet wurde).
-    console.log("Zeitplan-Lauf ohne Aufgaben (Phase 1):", new Date().toISOString());
+    if (!env.SPEICHER || !env.VAPID_PRIVATE) {
+      console.log("Zeitplan: Speicher/Schlüssel noch nicht eingerichtet – nichts zu tun.");
+      return;
+    }
+    const liste = await env.SPEICHER.list({ prefix: "nutzer:", limit: 1000 });
+    if (!liste.keys.length) { console.log("Zeitplan: keine Nutzer."); return; }
+
+    // Nutzer laden und nach (grobem) Ort gruppieren -> eine Wetterabfrage pro Ort
+    const nachOrt = new Map();
+    for (const eintrag of liste.keys) {
+      const roh = await env.SPEICHER.get(eintrag.name);
+      if (!roh) continue;
+      let nutzer;
+      try { nutzer = JSON.parse(roh); } catch { continue; }
+      nutzer._schluessel = eintrag.name;
+      const ort = nutzer.lat + "," + nutzer.lon;
+      if (!nachOrt.has(ort)) nachOrt.set(ort, []);
+      nachOrt.get(ort).push(nutzer);
+    }
+
+    let pushs = 0, fehler = 0;
+    for (const [ort, nutzerliste] of nachOrt) {
+      let vorhersage;
+      try {
+        const [lat, lon] = ort.split(",").map(Number);
+        vorhersage = await holeVorhersage(lat, lon);
+      } catch (f) {
+        console.log("Zeitplan: Wetter für", ort, "nicht verfügbar:", f.message);
+        continue;
+      }
+      const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
+
+      for (const nutzer of nutzerliste) {
+        const kennung = nutzer._schluessel.slice("nutzer:".length);
+        for (const regel of nutzer.regeln ?? []) {
+          if (!regel.aktiv) continue;
+          const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
+          for (const datum of Object.keys(gefunden).sort()) {
+            const merker = "gesendet:" + kennung + ":" + regel.name + ":" + datum;
+            if (await env.SPEICHER.get(merker)) continue;   // schon gemeldet
+            try {
+              const antwort = await sendeNachricht(nutzer.abo,
+                (regel.emoji || "🔔") + " " + regel.name,
+                blockZuText(datum, gefunden[datum]), env);
+              if (antwort.status === 404 || antwort.status === 410) {
+                // Abo existiert nicht mehr (App gelöscht o. ä.) -> austragen
+                await env.SPEICHER.delete(nutzer._schluessel);
+                fehler++;
+                break;
+              }
+              if (antwort.ok || antwort.status === 201) {
+                pushs++;
+                await env.SPEICHER.put(merker, "1", { expirationTtl: GESENDET_ABLAUF_SEK });
+              } else { fehler++; }
+            } catch { fehler++; }
+          }
+        }
+      }
+    }
+    console.log("Zeitplan fertig:", nachOrt.size, "Orte,", liste.keys.length, "Nutzer,", pushs, "Pushs,", fehler, "Fehler.");
   },
 };
