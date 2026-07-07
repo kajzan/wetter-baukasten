@@ -31,10 +31,14 @@ function themaGueltig(thema) {
   return typeof thema === "string" && /^[A-Za-z0-9_-]{4,64}$/.test(thema);
 }
 
-async function sendePush(thema, titel, text) {
+async function sendePush(thema, titel, text, token) {
+  const kopf = { "Content-Type": "application/json" };
+  // Mit Zugangs-Schlüssel zählt die ntfy-Grenze pro Konto statt pro Sammel-Adresse
+  // (behebt die "429"-Drosselung beim Senden aus Cloudflare heraus).
+  if (token) kopf["Authorization"] = "Bearer " + token;
   const versuch = await fetch("https://ntfy.sh/", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: kopf,
     body: JSON.stringify({ topic: thema, title: titel, message: text }),
   });
   if (!versuch.ok) throw new Error("ntfy antwortete mit Status " + versuch.status);
@@ -168,7 +172,7 @@ export default {
       }
       try {
         await sendePush(daten.thema, "✅ Wetter-Wächter-Dienst",
-          "Der neue Dienst läuft und kann Push-Nachrichten senden!");
+          "Der neue Dienst läuft und kann Push-Nachrichten senden!", env.NTFY_TOKEN);
         return jsonAntwort({ ok: true });
       } catch (fehler) {
         return jsonAntwort({ fehler: "Senden fehlgeschlagen: " + fehler.message }, 502);
