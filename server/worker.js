@@ -41,7 +41,11 @@ async function sendePush(thema, titel, text, token) {
     headers: kopf,
     body: JSON.stringify({ topic: thema, title: titel, message: text }),
   });
-  if (!versuch.ok) throw new Error("ntfy antwortete mit Status " + versuch.status);
+  if (!versuch.ok) {
+    let begruendung = "";
+    try { begruendung = (await versuch.text()).slice(0, 300); } catch { /* egal */ }
+    throw new Error("ntfy Status " + versuch.status + (begruendung ? " – " + begruendung : ""));
+  }
 }
 
 /* Kleine, in sich geschlossene Test-Seite (kein externer Code, kein Tracking). */
@@ -120,11 +124,12 @@ const TEST_SEITE = `<!DOCTYPE html>
         body: JSON.stringify({ thema }),
       });
       const daten = await antwort.json();
+      const schluessel = " (Schlüssel aktiv: " + (daten.schluesselAktiv ? "ja" : "nein") + ")";
       if (antwort.ok && daten.ok) {
-        ausgabe.textContent = "✅ Gesendet! Schau jetzt auf dein Handy.";
+        ausgabe.textContent = "✅ Gesendet! Schau jetzt auf dein Handy." + schluessel;
         ausgabe.style.color = "#15803d";
       } else {
-        ausgabe.textContent = "⚠️ " + (daten.fehler || "Unbekannter Fehler.");
+        ausgabe.textContent = "⚠️ " + (daten.fehler || "Unbekannter Fehler.") + schluessel;
         ausgabe.style.color = "#b91c1c";
       }
     } catch (fehler) {
@@ -170,12 +175,13 @@ export default {
       if (!themaGueltig(daten.thema)) {
         return jsonAntwort({ fehler: "Ungültiges Thema (4-64 Zeichen: Buchstaben, Zahlen, - und _)." }, 400);
       }
+      const schluesselAktiv = Boolean(env.NTFY_TOKEN);   // nur ja/nein, nie der Schlüssel selbst
       try {
         await sendePush(daten.thema, "✅ Wetter-Wächter-Dienst",
           "Der neue Dienst läuft und kann Push-Nachrichten senden!", env.NTFY_TOKEN);
-        return jsonAntwort({ ok: true });
+        return jsonAntwort({ ok: true, schluesselAktiv });
       } catch (fehler) {
-        return jsonAntwort({ fehler: "Senden fehlgeschlagen: " + fehler.message }, 502);
+        return jsonAntwort({ fehler: "Senden fehlgeschlagen: " + fehler.message, schluesselAktiv }, 502);
       }
     }
 
