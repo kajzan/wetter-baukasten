@@ -1,7 +1,7 @@
 // Konfiguration für den Wetter-Wächter-Dienst (Cloudflare Workers)
 // Wird von Cloudflare automatisch erkannt, wenn das Repo verbunden ist.
 {
-  "name": "wetter-waechter-dienst",
+  "name": "wetter-baukasten",
   "main": "server/worker.js",
   "compatibility_date": "2026-07-01",
   "triggers": {
