@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wetter-Wächter – Regel-Baukasten</title>
+<style>
+  /* ---------- Grundgerüst ---------- */
+  :root {
+    --hg: #f4f6f8;          /* Hintergrund */
+    --karte: #ffffff;       /* Kartenflächen */
+    --text: #1c2733;
+    --text2: #5b6b7b;       /* gedämpfter Text */
+    --linie: #dde4ea;
+    --akzent: #2563eb;      /* Blau für Bedienelemente */
+    --akzent-hell: #e8effd;
+    --gruen: #15803d;
+    --gruen-hell: #e6f4ea;
+    --rot: #b91c1c;
+    --rot-hell: #fdeaea;
+    --gelb-hell: #fdf6e3;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --hg: #10161d;
+      --karte: #1a232e;
+      --text: #e8edf2;
+      --text2: #93a3b3;
+      --linie: #2c3947;
+      --akzent: #5b93f5;
+      --akzent-hell: #1d2c44;
+      --gruen: #4ade80;
+      --gruen-hell: #12291a;
+      --rot: #f87171;
+      --rot-hell: #331616;
+      --gelb-hell: #2c2716;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--hg);
+    color: var(--text);
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 12px 12px 90px; }
+  h1 { font-size: 1.25rem; margin: 10px 4px 2px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .untertitel { color: var(--text2); font-size: .85rem; margin: 0 4px 14px; }
+
+  .karte {
+    background: var(--karte);
+    border: 1px solid var(--linie);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  /* ---------- Reiter unten (handyfreundlich) ---------- */
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex;
+    background: var(--karte);
+    border-top: 1px solid var(--linie);
+    z-index: 10;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1; border: 0; background: none; cursor: pointer;
+    padding: 8px 2px 10px;
+    font-size: .72rem; color: var(--text2);
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  nav button .symbol { font-size: 1.25rem; }
+  nav button.aktiv { color: var(--akzent); font-weight: 600; }
+
+  .seite { display: none; }
+  .seite.sichtbar { display: block; }
+
+  /* ---------- Formulare ---------- */
+  label { font-size: .85rem; color: var(--text2); display: block; margin-bottom: 2px; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--linie);
+    border-radius: 8px;
+    background: var(--hg);
+    color: var(--text);
+    font-size: 16px; /* verhindert Auto-Zoom am iPhone */
+  }
+  .zeile { display: flex; gap: 10px; margin-bottom: 10px; }
+  .zeile > div { flex: 1; min-width: 0; }
+
+  .knopf {
+    display: inline-block;
+    border: 0; border-radius: 9px; cursor: pointer;
+    padding: 10px 14px; font-size: .92rem; font-weight: 600;
+    background: var(--akzent); color: #fff;
+  }
+  .knopf.zart { background: var(--akzent-hell); color: var(--akzent); }
+  .knopf.gruen { background: var(--gruen); color: #fff; }
+  .knopf.klein { padding: 6px 10px; font-size: .8rem; }
+  .knopf:disabled { opacity: .5; cursor: default; }
+  .knopfleiste { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+
+  /* ---------- Regel-Karten ---------- */
+  .regelkopf { display: flex; align-items: center; gap: 10px; }
+  .regelkopf .emoji { font-size: 1.5rem; }
+  .regelkopf .regelname { flex: 1; font-weight: 700; font-size: 1rem; }
+  .regel-inaktiv { opacity: .55; }
+
+  /* Schalter (an/aus) */
+  .schalter { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+  .schalter input { opacity: 0; width: 100%; height: 100%; position: absolute; margin: 0; cursor: pointer; z-index: 2; }
+  .schalter .bahn {
+    position: absolute; inset: 0; border-radius: 13px;
+    background: var(--linie); transition: background .15s;
+  }
+  .schalter .bahn::after {
+    content: ""; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    transition: left .15s;
+  }
+  .schalter input:checked + .bahn { background: var(--gruen); }
+  .schalter input:checked + .bahn::after { left: 23px; }
+
+  /* Bedingungs-Zeilen mit Schieberegler */
+  .bedingung { display: grid; grid-template-columns: 34px 1fr 86px; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--linie); }
+  .bedingung:first-of-type { border-top: 0; }
+  .bedingung .bez { font-size: .85rem; }
+  .bedingung .bez small { color: var(--text2); }
+  .bedingung input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--akzent); }
+  .bedingung input[type=range] { width: 100%; accent-color: var(--akzent); grid-column: 2; }
+  .bedingung input[type=number] { padding: 6px 8px; text-align: right; }
+  .bedingung.aus input[type=range], .bedingung.aus input[type=number] { opacity: .35; pointer-events: none; }
+
+  .feineinstellung summary { cursor: pointer; font-size: .85rem; color: var(--akzent); padding: 6px 0; }
+
+  .hinweis { font-size: .82rem; color: var(--text2); }
+  .warnung { background: var(--rot-hell); color: var(--rot); border-radius: 8px; padding: 8px 10px; font-size: .85rem; margin-top: 8px; }
+  .info { background: var(--gelb-hell); border-radius: 8px; padding: 8px 10px; font-size: .85rem; margin-top: 8px; }
+
+  /* ---------- Vorschau / Dashboard ---------- */
+  .treffer { background: var(--gruen-hell); color: var(--gruen); border-radius: 8px; padding: 8px 10px; margin-top: 6px; font-size: .9rem; }
+  .kein-treffer { color: var(--text2); font-size: .88rem; margin-top: 6px; }
+
+  .tagesgitter { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tag { border: 1px solid var(--linie); border-radius: 10px; padding: 10px; font-size: .85rem; }
+  .tag .tagname { font-weight: 700; margin-bottom: 4px; }
+  .tag div { display: flex; justify-content: space-between; gap: 6px; }
+  .tag div span:last-child { font-variant-numeric: tabular-nums; }
+
+  pre {
+    background: var(--hg);
+    border: 1px solid var(--linie);
+    border-radius: 8px;
+    padding: 10px;
+    overflow-x: auto;
+    font-size: .78rem;
+    max-height: 300px;
+  }
+  ol { padding-left: 20px; font-size: .9rem; }
+  ol li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🌦️ Wetter-Wächter – Regel-Baukasten</h1>
+  <p class="untertitel">Regeln entwerfen, live prüfen, dann bewusst aktivieren. Alles bleibt in deinem Browser gespeichert.</p>
+
+  <!-- ========== Seite 1: Regeln ========== -->
+  <section id="seite-regeln" class="seite sichtbar">
+    <div class="karte">
+      <h2>Profil</h2>
+      <div class="zeile">
+        <div style="flex:2">
+          <label for="profil-auswahl">Aktives Profil</label>
+          <select id="profil-auswahl"></select>
+        </div>
+      </div>
+      <div class="zeile">
+        <div>
+          <label>Orts-Hinweis (nur für dich)</label>
+          <input type="text" id="p-ortsHinweis">
+        </div>
+      </div>
+      <div class="zeile">
+        <div>
+          <label>Breitengrad (grob)</label>
+          <input type="number" id="p-lat" step="0.1" min="-90" max="90">
+        </div>
+        <div>
+          <label>Längengrad (grob)</label>
+          <input type="number" id="p-lon" step="0.1" min="-180" max="180">
+        </div>
+      </div>
+      <div class="zeile">
+        <div>
+          <label>Name des GitHub-Secrets (z.&nbsp;B. NTFY_THEMA_P1)</label>
+          <input type="text" id="p-themaSecret">
+        </div>
+      </div>
+      <p class="hinweis">🔒 Datenschutz: Koordinaten werden automatisch auf 1 Nachkommastelle gerundet (~11&nbsp;km grob).
+      Trage hier <b>nur den Namen</b> des Secrets ein – niemals das geheime ntfy-Thema selbst!</p>
+      <div class="knopfleiste">
+        <button class="knopf zart klein" id="profil-neu">+ Neues Profil</button>
+        <button class="knopf zart klein" id="profil-loeschen">Profil löschen</button>
+      </div>
+    </div>
+
+    <div id="regel-liste"></div>
+
+    <button class="knopf" id="regel-neu">+ Neue Regel</button>
+  </section>
+
+  <!-- ========== Seite 2: Vorschau ========== -->
+  <section id="seite-vorschau" class="seite">
+    <div class="karte">
+      <h2>Live-Vorschau</h2>
+      <p class="hinweis">Prüft deine <b>Entwurfs-Regeln</b> gegen die echte Vorhersage der nächsten 4 Tage –
+      mit exakt derselben Logik wie der Wächter (Blockbildung, Mindestdauer, erster Block pro Tag).
+      Es wird dabei <b>nichts gesendet</b>.</p>
+      <div class="knopfleiste">
+        <button class="knopf" id="vorschau-laden">🔄 Vorschau laden</button>
+      </div>
+      <div id="vorschau-status" class="hinweis" style="margin-top:8px"></div>
+    </div>
+    <div id="vorschau-ergebnis"></div>
+  </section>
+
+  <!-- ========== Seite 3: Wetter-Dashboard ========== -->
+  <section id="seite-wetter" class="seite">
+    <div class="karte">
+      <h2>Wetter-Übersicht (4 Tage)</h2>
+      <p class="hinweis">Tageswerte für den grob eingestellten Ort des aktiven Profils.</p>
+      <div class="knopfleiste">
+        <button class="knopf" id="wetter-laden">🔄 Wetter laden</button>
+      </div>
+      <div id="wetter-status" class="hinweis" style="margin-top:8px"></div>
+    </div>
+    <div class="karte" id="wetter-karte" style="display:none">
+      <div class="tagesgitter" id="wetter-tage"></div>
+    </div>
+  </section>
+
+  <!-- ========== Seite 4: Aktivieren ========== -->
+  <section id="seite-aktivieren" class="seite">
+    <div class="karte">
+      <h2>Aktivieren</h2>
+      <p class="hinweis">Deine Änderungen wirken erst, wenn die Datei <b>regeln.json</b> im GitHub-Repo ersetzt wird.
+      Diese Seite erzeugt die fertige Datei – ganz bewusst ohne automatischen Zugriff auf dein Repo.</p>
+      <div class="knopfleiste">
+        <button class="knopf gruen" id="json-erzeugen">✅ regeln.json erzeugen</button>
+      </div>
+      <div id="json-warnungen"></div>
+    </div>
+
+    <div class="karte" id="json-ausgabe-karte" style="display:none">
+      <h2>Deine neue regeln.json</h2>
+      <pre id="json-ausgabe"></pre>
+      <div class="knopfleiste">
+        <button class="knopf" id="json-herunterladen">⬇️ Herunterladen</button>
+        <button class="knopf zart" id="json-kopieren">📋 Kopieren</button>
+      </div>
+      <div class="info" style="margin-top:12px">
+        <b>So setzt du die Datei ein (2 Minuten):</b>
+        <ol>
+          <li>Öffne dein Repo <b>wetter-waechter</b> auf github.com und tippe auf die Datei <b>regeln.json</b>.</li>
+          <li>Tippe auf das <b>Stift-Symbol</b> (Bearbeiten).</li>
+          <li>Lösche den alten Inhalt und füge den kopierten neuen Inhalt ein.</li>
+          <li>Tippe auf <b>Commit changes</b> (grüner Knopf) und bestätige.</li>
+          <li>Fertig – beim nächsten automatischen Lauf (alle 3 Stunden) gelten die neuen Regeln.
+              Ungeduldig? Im Reiter <b>Actions</b> → „Wetter-Wächter“ → „Run workflow“ startest du sofort einen Lauf.</li>
+        </ol>
+        <b>Neues Profil ergänzt?</b> Dann brauchst du zusätzlich einmalig:
+        <ol>
+          <li>Ein neues Repository-Secret (Settings → Secrets and variables → Actions) mit genau dem Namen aus dem Profil (z.&nbsp;B. <b>NTFY_THEMA_P2</b>) und einem neuen geheimen ntfy-Thema als Wert.</li>
+          <li>Eine Zeile in <b>.github/workflows/wetter-waechter.yml</b> unter <code>env:</code> nach dem Muster der vorhandenen P1-Zeile.</li>
+          <li>In der ntfy-App des neuen Handys: dieses Thema abonnieren.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-seite="regeln" class="aktiv"><span class="symbol">📝</span>Regeln</button>
+  <button data-seite="vorschau"><span class="symbol">🔍</span>Vorschau</button>
+  <button data-seite="wetter"><span class="symbol">🌤️</span>Wetter</button>
+  <button data-seite="aktivieren"><span class="symbol">✅</span>Aktivieren</button>
+</nav>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   TEIL 1: WÄCHTER-LOGIK (1:1-Übersetzung aus waechter.py)
+   Diese Funktionen müssen sich exakt wie das Python-Skript verhalten,
+   damit Vorschau und Wächter nie widersprüchliche Ergebnisse liefern.
+   ===================================================================== */
+// ===LOGIK-START===
+const STUNDE_MS = 3600 * 1000;
+
+/* Entspricht stunde_passt() in waechter.py. */
+function stundePasst(bedingungen, temp, wind, regen, wolken, feuchte) {
+  function mindestens(schluessel, wert) {
+    const grenze = bedingungen[schluessel];
+    return grenze === undefined || grenze === null || wert >= grenze;
+  }
+  function hoechstens(schluessel, wert) {
+    const grenze = bedingungen[schluessel];
+    return grenze === undefined || grenze === null || wert <= grenze;
+  }
+  return (mindestens("tempMin", temp) && hoechstens("tempMax", temp)
+          && hoechstens("windMax", wind) && mindestens("windMin", wind)
+          && hoechstens("regenMax", regen)
+          && mindestens("bewoelkungMin", wolken)
+          && hoechstens("bewoelkungMax", wolken)
+          && hoechstens("feuchteMax", feuchte));
+}
+
+/* Entspricht finde_treffer() in waechter.py.
+   Zeiten werden wie im Python-Skript "naiv" behandelt: die lokalen
+   Zeitstempel der Vorhersage werden als UTC-Millisekunden geparst und
+   mit jetztLokalMs (UTC-jetzt + Zeitzonen-Versatz) verglichen.
+   Rückgabe: { "JJJJ-MM-TT": [ { zeitMs, werte:[temp,wind,regen,wolken,feuchte] }, ... ] } */
+function findeTreffer(regel, vorhersage, jetztLokalMs) {
+  const stunden = vorhersage.hourly;
+  const fensterEndeMs = jetztLokalMs + (regel.zeitfensterStunden ?? 48) * STUNDE_MS;
+  const vonUhr = regel.nurVonUhr ?? 0;
+  const bisUhr = regel.nurBisUhr ?? 24;
+  const mindest = regel.mindestdauerStunden ?? 2;
+  const bedingungen = regel.bedingungen ?? {};
+
+  // Schritt 1: alle passenden Einzelstunden sammeln
+  const passende = [];
+  for (let i = 0; i < stunden.time.length; i++) {
+    const zeitMs = Date.parse(stunden.time[i] + ":00Z"); // "2026-07-07T13:00" -> naiv als UTC
+    if (zeitMs < jetztLokalMs || zeitMs > fensterEndeMs) continue;
+    const uhr = new Date(zeitMs).getUTCHours();
+    if (!(vonUhr <= uhr && uhr < bisUhr)) continue;
+    const werte = [stunden.temperature_2m[i],
+                   stunden.wind_speed_10m[i],
+                   stunden.precipitation[i],
+                   stunden.cloud_cover[i],
+                   stunden.relative_humidity_2m[i]];
+    if (werte.some(w => w === null || w === undefined)) continue;
+    if (stundePasst(bedingungen, ...werte)) passende.push({ zeitMs, werte });
+  }
+
+  // Schritt 2: aufeinanderfolgende Stunden zu Blöcken gruppieren
+  const treffer = {};
+  let block = [];
+  function blockAbschliessen(fertigerBlock) {
+    if (fertigerBlock.length >= mindest) {
+      const datum = new Date(fertigerBlock[0].zeitMs).toISOString().slice(0, 10);
+      if (!(datum in treffer)) treffer[datum] = fertigerBlock.slice(); // nur der erste Block pro Tag
+    }
+  }
+  for (const eintrag of passende) {
+    if (block.length && (eintrag.zeitMs - block[block.length - 1].zeitMs !== STUNDE_MS)) {
+      blockAbschliessen(block);
+      block = [];
+    }
+    block.push(eintrag);
+  }
+  blockAbschliessen(block);
+  return treffer;
+}
+// ===LOGIK-ENDE===
+
+/* Vorhersage holen – gleiche Parameter wie hole_vorhersage() in waechter.py,
+   inklusive Sicherheitsnetz: Koordinaten immer grob runden. */
+async function holeVorhersage(lat, lon) {
+  const parameter = new URLSearchParams({
+    latitude: (Math.round(parseFloat(lat) * 10) / 10).toString(),
+    longitude: (Math.round(parseFloat(lon) * 10) / 10).toString(),
+    hourly: "temperature_2m,wind_speed_10m,precipitation,cloud_cover,relative_humidity_2m",
+    forecast_days: "4",
+    timezone: "auto",
+  });
+  const antwort = await fetch("https://api.open-meteo.com/v1/forecast?" + parameter);
+  if (!antwort.ok) throw new Error("Open-Meteo antwortete mit Status " + antwort.status);
+  return antwort.json();
+}
+
+/* =====================================================================
+   TEIL 2: ENTWURFS-SPEICHER (localStorage)
+   ===================================================================== */
+const SPEICHER_SCHLUESSEL = "wetterWaechterEntwurf_v1";
+
+function standardKonfig() {
+  return {
+    profile: [
+      {
+        name: "P1",
+        ortsHinweis: "Beispiel Mitteleuropa – bitte anpassen",
+        lat: 51.0,
+        lon: 10.0,
+        themaSecret: "NTFY_THEMA_P1",
+        regeln: [
+          { name: "Pizzatag", emoji: "🍕", aktiv: true,
+            zeitfensterStunden: 48, nurVonUhr: 11, nurBisUhr: 21, mindestdauerStunden: 3,
+            bedingungen: { windMax: 10, tempMin: 18, tempMax: 28, regenMax: 0 } },
+          { name: "Pflanztag", emoji: "🌱", aktiv: true,
+            zeitfensterStunden: 48, nurVonUhr: 8, nurBisUhr: 20, mindestdauerStunden: 4,
+            bedingungen: { tempMin: 15, tempMax: 24, bewoelkungMin: 30, bewoelkungMax: 70, regenMax: 0.2 } },
+        ],
+      },
+    ],
+  };
+}
+
+let konfig;          // der komplette Entwurf
+let profilIndex = 0; // welches Profil gerade bearbeitet wird
+
+function ladeEntwurf() {
+  try {
+    const roh = localStorage.getItem(SPEICHER_SCHLUESSEL);
+    if (roh) {
+      const geladen = JSON.parse(roh);
+      if (geladen && Array.isArray(geladen.profile) && geladen.profile.length) return geladen;
+    }
+  } catch (fehler) { /* kaputter Speicher -> Standard verwenden */ }
+  return standardKonfig();
+}
+
+function speichereEntwurf() {
+  localStorage.setItem(SPEICHER_SCHLUESSEL, JSON.stringify(konfig));
+}
+
+/* =====================================================================
+   TEIL 3: BEDINGUNGS-BAUSTEINE (für Editor und Export)
+   ===================================================================== */
+const BAUSTEINE = [
+  { schluessel: "tempMin",       bez: "Temperatur mindestens", einheit: "°C",   min: -20, max: 45,  schritt: 1 },
+  { schluessel: "tempMax",       bez: "Temperatur höchstens",  einheit: "°C",   min: -20, max: 45,  schritt: 1 },
+  { schluessel: "windMin",       bez: "Wind mindestens",       einheit: "km/h", min: 0,   max: 120, schritt: 1 },
+  { schluessel: "windMax",       bez: "Wind höchstens",        einheit: "km/h", min: 0,   max: 120, schritt: 1 },
+  { schluessel: "regenMax",      bez: "Regen höchstens",       einheit: "mm/h", min: 0,   max: 10,  schritt: 0.1 },
+  { schluessel: "bewoelkungMin", bez: "Bewölkung mindestens",  einheit: "%",    min: 0,   max: 100, schritt: 5 },
+  { schluessel: "bewoelkungMax", bez: "Bewölkung höchstens",   einheit: "%",    min: 0,   max: 100, schritt: 5 },
+  { schluessel: "feuchteMax",    bez: "Luftfeuchte höchstens", einheit: "%",    min: 0,   max: 100, schritt: 5 },
+];
+const BAUSTEIN_STANDARD = { tempMin: 15, tempMax: 25, windMin: 5, windMax: 20,
+                            regenMax: 0, bewoelkungMin: 20, bewoelkungMax: 80, feuchteMax: 70 };
+
+const WOCHENTAGE = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+const WOCHENTAGE_KURZ = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+/* =====================================================================
+   TEIL 4: OBERFLÄCHE
+   ===================================================================== */
+const $ = (auswahl) => document.querySelector(auswahl);
+
+function aktuellesProfil() { return konfig.profile[profilIndex]; }
+
+/* ---------- Reiter-Navigation ---------- */
+document.querySelectorAll("nav button").forEach(knopf => {
+  knopf.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(k => k.classList.remove("aktiv"));
+    knopf.classList.add("aktiv");
+    document.querySelectorAll(".seite").forEach(s => s.classList.remove("sichtbar"));
+    $("#seite-" + knopf.dataset.seite).classList.add("sichtbar");
+  });
+});
+
+/* ---------- Profil-Bereich ---------- */
+function zeichneProfilAuswahl() {
+  const auswahl = $("#profil-auswahl");
+  auswahl.innerHTML = "";
+  konfig.profile.forEach((p, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = `${p.name} – ${p.ortsHinweis || "ohne Hinweis"}`;
+    auswahl.appendChild(opt);
+  });
+  auswahl.value = profilIndex;
+  const p = aktuellesProfil();
+  $("#p-ortsHinweis").value = p.ortsHinweis ?? "";
+  $("#p-lat").value = p.lat;
+  $("#p-lon").value = p.lon;
+  $("#p-themaSecret").value = p.themaSecret ?? "";
+}
+
+$("#profil-auswahl").addEventListener("change", (e) => {
+  profilIndex = parseInt(e.target.value, 10);
+  zeichneAlles();
+});
+
+$("#p-ortsHinweis").addEventListener("change", (e) => {
+  aktuellesProfil().ortsHinweis = e.target.value.trim();
+  speichereEntwurf(); zeichneProfilAuswahl();
+});
+$("#p-lat").addEventListener("change", (e) => {
+  const wert = Math.round(parseFloat(e.target.value || 0) * 10) / 10; // Datenschutz: grob runden
+  aktuellesProfil().lat = Math.max(-90, Math.min(90, isNaN(wert) ? 0 : wert));
+  speichereEntwurf(); zeichneProfilAuswahl();
+});
+$("#p-lon").addEventListener("change", (e) => {
+  const wert = Math.round(parseFloat(e.target.value || 0) * 10) / 10;
+  aktuellesProfil().lon = Math.max(-180, Math.min(180, isNaN(wert) ? 0 : wert));
+  speichereEntwurf(); zeichneProfilAuswahl();
+});
+$("#p-themaSecret").addEventListener("change", (e) => {
+  aktuellesProfil().themaSecret = e.target.value.trim();
+  speichereEntwurf();
+});
+
+$("#profil-neu").addEventListener("click", () => {
+  const nummer = konfig.profile.length + 1;
+  konfig.profile.push({
+    name: "P" + nummer,
+    ortsHinweis: "",
+    lat: 51.0, lon: 10.0, // neutraler Startpunkt (Mitteleuropa, grob)
+    themaSecret: "NTFY_THEMA_P" + nummer,
+    regeln: [],
+  });
+  profilIndex = konfig.profile.length - 1;
+  speichereEntwurf(); zeichneAlles();
+});
+
+$("#profil-loeschen").addEventListener("click", () => {
+  if (konfig.profile.length <= 1) { alert("Das letzte Profil kann nicht gelöscht werden."); return; }
+  if (!confirm(`Profil „${aktuellesProfil().name}“ wirklich löschen?`)) return;
+  konfig.profile.splice(profilIndex, 1);
+  profilIndex = 0;
+  speichereEntwurf(); zeichneAlles();
+});
+
+/* ---------- Regel-Editor ---------- */
+function zeichneRegeln() {
+  const liste = $("#regel-liste");
+  liste.innerHTML = "";
+  const p = aktuellesProfil();
+
+  if (!p.regeln.length) {
+    liste.innerHTML = `<div class="karte hinweis">Noch keine Regeln in diesem Profil – lege unten die erste an.</div>`;
+    return;
+  }
+
+  p.regeln.forEach((regel, ri) => {
+    const karte = document.createElement("div");
+    karte.className = "karte" + (regel.aktiv ? "" : " regel-inaktiv");
+
+    let bedingungenHtml = "";
+    for (const b of BAUSTEINE) {
+      const gesetzt = regel.bedingungen[b.schluessel] !== undefined;
+      const wert = gesetzt ? regel.bedingungen[b.schluessel] : BAUSTEIN_STANDARD[b.schluessel];
+      bedingungenHtml += `
+        <div class="bedingung ${gesetzt ? "" : "aus"}" data-schluessel="${b.schluessel}">
+          <input type="checkbox" data-art="b-an" data-ri="${ri}" data-schluessel="${b.schluessel}" ${gesetzt ? "checked" : ""}>
+          <span class="bez">${b.bez} <small>(${b.einheit})</small></span>
+          <input type="number" data-art="b-zahl" data-ri="${ri}" data-schluessel="${b.schluessel}"
+                 min="${b.min}" max="${b.max}" step="${b.schritt}" value="${wert}">
+          <input type="range" data-art="b-regler" data-ri="${ri}" data-schluessel="${b.schluessel}"
+                 min="${b.min}" max="${b.max}" step="${b.schritt}" value="${wert}">
+        </div>`;
+    }
+
+    karte.innerHTML = `
+      <div class="regelkopf">
+        <span class="emoji">${regel.emoji || "🔔"}</span>
+        <span class="regelname">${textSicher(regel.name)}</span>
+        <label class="schalter" title="Regel aktiv/inaktiv">
+          <input type="checkbox" data-art="r-aktiv" data-ri="${ri}" ${regel.aktiv ? "checked" : ""}>
+          <span class="bahn"></span>
+        </label>
+      </div>
+      <details class="feineinstellung">
+        <summary>Bearbeiten</summary>
+        <div class="zeile" style="margin-top:8px">
+          <div style="flex:2">
+            <label>Name der Regel</label>
+            <input type="text" data-art="r-name" data-ri="${ri}" value="${textSicher(regel.name)}">
+          </div>
+          <div>
+            <label>Symbol</label>
+            <input type="text" data-art="r-emoji" data-ri="${ri}" value="${regel.emoji || ""}" maxlength="4">
+          </div>
+        </div>
+        <div class="zeile">
+          <div>
+            <label>Vorschau-Fenster (Std.)</label>
+            <input type="number" data-art="r-fenster" data-ri="${ri}" min="1" max="96" value="${regel.zeitfensterStunden ?? 48}">
+          </div>
+          <div>
+            <label>Mindestdauer (Std.)</label>
+            <input type="number" data-art="r-mindest" data-ri="${ri}" min="1" max="24" value="${regel.mindestdauerStunden ?? 2}">
+          </div>
+        </div>
+        <div class="zeile">
+          <div>
+            <label>Nur von (Uhr)</label>
+            <input type="number" data-art="r-von" data-ri="${ri}" min="0" max="23" value="${regel.nurVonUhr ?? 0}">
+          </div>
+          <div>
+            <label>Nur bis (Uhr)</label>
+            <input type="number" data-art="r-bis" data-ri="${ri}" min="1" max="24" value="${regel.nurBisUhr ?? 24}">
+          </div>
+        </div>
+        <label style="margin-top:4px">Bedingungen (Haken = Bedingung gilt)</label>
+        ${bedingungenHtml}
+        <div class="knopfleiste" style="margin-top:10px">
+          <button class="knopf zart klein" data-art="r-loeschen" data-ri="${ri}">🗑️ Regel löschen</button>
+        </div>
+      </details>`;
+    liste.appendChild(karte);
+  });
+}
+
+function textSicher(text) {
+  return String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                           .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* Ein zentraler Ereignis-Horcher für alle Regel-Eingaben (Ereignis-Delegation) */
+$("#regel-liste").addEventListener("input", (e) => {
+  const el = e.target;
+  const art = el.dataset.art;
+  if (!art) return;
+  const regel = aktuellesProfil().regeln[parseInt(el.dataset.ri, 10)];
+  if (!regel) return;
+
+  if (art === "b-regler" || art === "b-zahl") {
+    // Regler und Zahlenfeld synchron halten, Wert sofort übernehmen
+    const zeile = el.closest(".bedingung");
+    const anderes = zeile.querySelector(art === "b-regler" ? "[data-art=b-zahl]" : "[data-art=b-regler]");
+    anderes.value = el.value;
+    const zahl = parseFloat(el.value);
+    if (!isNaN(zahl) && regel.bedingungen[el.dataset.schluessel] !== undefined) {
+      regel.bedingungen[el.dataset.schluessel] = zahl;
+      speichereEntwurf();
+    }
+    return;
+  }
+});
+
+$("#regel-liste").addEventListener("change", (e) => {
+  const el = e.target;
+  const art = el.dataset.art;
+  if (!art) return;
+  const ri = parseInt(el.dataset.ri, 10);
+  const regel = aktuellesProfil().regeln[ri];
+  if (!regel) return;
+
+  if (art === "r-aktiv") { regel.aktiv = el.checked; speichereEntwurf(); zeichneRegeln(); return; }
+  if (art === "r-name")  { regel.name = el.value.trim() || "Regel"; speichereEntwurf(); zeichneRegeln(); return; }
+  if (art === "r-emoji") { regel.emoji = el.value.trim() || "🔔"; speichereEntwurf(); zeichneRegeln(); return; }
+  if (art === "r-fenster") { regel.zeitfensterStunden = begrenze(el.value, 1, 96, 48); speichereEntwurf(); return; }
+  if (art === "r-mindest") { regel.mindestdauerStunden = begrenze(el.value, 1, 24, 2); speichereEntwurf(); return; }
+  if (art === "r-von")     { regel.nurVonUhr = begrenze(el.value, 0, 23, 0); speichereEntwurf(); return; }
+  if (art === "r-bis")     { regel.nurBisUhr = begrenze(el.value, 1, 24, 24); speichereEntwurf(); return; }
+
+  if (art === "b-an") {
+    const schluessel = el.dataset.schluessel;
+    if (el.checked) {
+      const zeile = el.closest(".bedingung");
+      regel.bedingungen[schluessel] = parseFloat(zeile.querySelector("[data-art=b-zahl]").value);
+    } else {
+      delete regel.bedingungen[schluessel]; // fehlender Schlüssel = Bedingung wird ignoriert
+    }
+    speichereEntwurf(); zeichneRegeln(); return;
+  }
+  if (art === "b-zahl") {
+    const zahl = parseFloat(el.value);
+    if (!isNaN(zahl) && regel.bedingungen[el.dataset.schluessel] !== undefined) {
+      regel.bedingungen[el.dataset.schluessel] = zahl;
+      speichereEntwurf();
+    }
+    return;
+  }
+});
+
+$("#regel-liste").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-art=r-loeschen]");
+  if (!el) return;
+  const ri = parseInt(el.dataset.ri, 10);
+  const regel = aktuellesProfil().regeln[ri];
+  if (confirm(`Regel „${regel.name}“ wirklich löschen?`)) {
+    aktuellesProfil().regeln.splice(ri, 1);
+    speichereEntwurf(); zeichneRegeln();
+  }
+});
+
+function begrenze(wert, min, max, standard) {
+  const zahl = parseInt(wert, 10);
+  if (isNaN(zahl)) return standard;
+  return Math.max(min, Math.min(max, zahl));
+}
+
+$("#regel-neu").addEventListener("click", () => {
+  aktuellesProfil().regeln.push({
+    name: "Neue Regel", emoji: "🔔", aktiv: true,
+    zeitfensterStunden: 48, nurVonUhr: 8, nurBisUhr: 20, mindestdauerStunden: 2,
+    bedingungen: { tempMin: 15 },
+  });
+  speichereEntwurf(); zeichneRegeln();
+  // Die neue Karte gleich aufklappen
+  const karten = document.querySelectorAll("#regel-liste details");
+  if (karten.length) karten[karten.length - 1].open = true;
+});
+
+/* ---------- Live-Vorschau ---------- */
+$("#vorschau-laden").addEventListener("click", async () => {
+  const status = $("#vorschau-status");
+  const ergebnis = $("#vorschau-ergebnis");
+  ergebnis.innerHTML = "";
+  status.textContent = "Hole Vorhersage …";
+  const p = aktuellesProfil();
+  try {
+    const vorhersage = await holeVorhersage(p.lat, p.lon);
+    const versatz = vorhersage.utc_offset_seconds ?? 0;
+    const jetztLokalMs = Date.now() + versatz * 1000;
+    status.textContent = "Stand: " + new Date().toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                       + ` · Profil ${p.name}`;
+
+    let html = "";
+    for (const regel of p.regeln) {
+      html += `<div class="karte${regel.aktiv ? "" : " regel-inaktiv"}">
+        <div class="regelkopf"><span class="emoji">${regel.emoji || "🔔"}</span>
+        <span class="regelname">${textSicher(regel.name)}</span></div>`;
+      if (!regel.aktiv) {
+        html += `<div class="kein-treffer">Regel ist ausgeschaltet – der Wächter überspringt sie.</div>`;
+      } else {
+        const treffer = findeTreffer(regel, vorhersage, jetztLokalMs);
+        const tage = Object.keys(treffer).sort();
+        if (!tage.length) {
+          html += `<div class="kein-treffer">Kein Treffer im Fenster von ${regel.zeitfensterStunden ?? 48} Stunden.</div>`;
+        }
+        for (const tag of tage) {
+          const block = treffer[tag];
+          const von = new Date(block[0].zeitMs).getUTCHours();
+          const bis = new Date(block[block.length - 1].zeitMs).getUTCHours() + 1;
+          const temps = block.map(b => b.werte[0]);
+          const winde = block.map(b => b.werte[1]);
+          const d = new Date(tag + "T00:00:00Z");
+          html += `<div class="treffer">✔️ ${WOCHENTAGE[d.getUTCDay()]}, ${tag.slice(8,10)}.${tag.slice(5,7)}.:
+            von ${von} bis ${bis} Uhr passt alles –
+            ca. ${Math.round(temps.reduce((a,b)=>a+b,0)/temps.length)} °C,
+            Wind bis ${Math.round(Math.max(...winde))} km/h.</div>`;
+        }
+      }
+      html += `</div>`;
+    }
+    if (!p.regeln.length) html = `<div class="karte hinweis">Dieses Profil hat noch keine Regeln.</div>`;
+    ergebnis.innerHTML = html;
+  } catch (fehler) {
+    status.textContent = "";
+    ergebnis.innerHTML = `<div class="karte"><div class="warnung">Vorhersage konnte nicht geladen werden
+      (${textSicher(fehler.message)}). Bitte Internetverbindung prüfen und erneut versuchen.</div></div>`;
+  }
+});
+
+/* ---------- Wetter-Dashboard ---------- */
+$("#wetter-laden").addEventListener("click", async () => {
+  const status = $("#wetter-status");
+  status.textContent = "Hole Wetterdaten …";
+  $("#wetter-karte").style.display = "none";
+  const p = aktuellesProfil();
+  try {
+    const v = await holeVorhersage(p.lat, p.lon);
+    const stunden = v.hourly;
+
+    // Stunden nach Tagen zusammenfassen
+    const tage = {};
+    for (let i = 0; i < stunden.time.length; i++) {
+      const tag = stunden.time[i].slice(0, 10);
+      (tage[tag] ??= []).push(i);
+    }
+
+    let html = "";
+    for (const tag of Object.keys(tage).sort()) {
+      const idx = tage[tag];
+      const temps = idx.map(i => stunden.temperature_2m[i]).filter(w => w !== null);
+      const winde = idx.map(i => stunden.wind_speed_10m[i]).filter(w => w !== null);
+      const regen = idx.map(i => stunden.precipitation[i]).filter(w => w !== null);
+      const wolken = idx.map(i => stunden.cloud_cover[i]).filter(w => w !== null);
+      if (!temps.length) continue;
+      const d = new Date(tag + "T00:00:00Z");
+      const regenSumme = regen.reduce((a, b) => a + b, 0);
+      html += `<div class="tag">
+        <div class="tagname">${WOCHENTAGE_KURZ[d.getUTCDay()]}, ${tag.slice(8,10)}.${tag.slice(5,7)}.</div>
+        <div><span>🌡️ Temperatur</span><span>${Math.round(Math.min(...temps))}–${Math.round(Math.max(...temps))} °C</span></div>
+        <div><span>💨 Wind max.</span><span>${Math.round(Math.max(...winde))} km/h</span></div>
+        <div><span>🌧️ Regen ges.</span><span>${(Math.round(regenSumme * 10) / 10).toLocaleString("de-DE")} mm</span></div>
+        <div><span>☁️ Bewölkung Ø</span><span>${Math.round(wolken.reduce((a,b)=>a+b,0)/wolken.length)} %</span></div>
+      </div>`;
+    }
+    $("#wetter-tage").innerHTML = html;
+    $("#wetter-karte").style.display = "";
+    status.textContent = `Profil ${p.name} · grob ${aktuellesProfil().lat} / ${aktuellesProfil().lon}
+      · Stand: ${new Date().toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}`;
+  } catch (fehler) {
+    status.innerHTML = `<span class="warnung" style="display:inline-block">Wetterdaten konnten nicht geladen werden
+      (${textSicher(fehler.message)}).</span>`;
+  }
+});
+
+/* ---------- Aktivieren: regeln.json erzeugen ---------- */
+function pruefeEntwurf() {
+  const warnungen = [];
+  for (const p of konfig.profile) {
+    if (!p.themaSecret) warnungen.push(`Profil ${p.name}: Secret-Name fehlt.`);
+    if (p.themaSecret && !/^[A-Z0-9_]+$/.test(p.themaSecret))
+      warnungen.push(`Profil ${p.name}: Secret-Name „${p.themaSecret}“ sollte nur GROSSBUCHSTABEN, Zahlen und _ enthalten.`);
+    for (const r of p.regeln) {
+      const b = r.bedingungen;
+      if (b.tempMin !== undefined && b.tempMax !== undefined && b.tempMin > b.tempMax)
+        warnungen.push(`${p.name} / ${r.name}: Temperatur-mindestens liegt über Temperatur-höchstens.`);
+      if (b.windMin !== undefined && b.windMax !== undefined && b.windMin > b.windMax)
+        warnungen.push(`${p.name} / ${r.name}: Wind-mindestens liegt über Wind-höchstens.`);
+      if (b.bewoelkungMin !== undefined && b.bewoelkungMax !== undefined && b.bewoelkungMin > b.bewoelkungMax)
+        warnungen.push(`${p.name} / ${r.name}: Bewölkung-mindestens liegt über Bewölkung-höchstens.`);
+      if ((r.nurVonUhr ?? 0) >= (r.nurBisUhr ?? 24))
+        warnungen.push(`${p.name} / ${r.name}: „Nur von“ muss vor „Nur bis“ liegen.`);
+      if (Object.keys(b).length === 0 && r.aktiv)
+        warnungen.push(`${p.name} / ${r.name}: keine Bedingungen gesetzt – die Regel würde IMMER auslösen.`);
+    }
+  }
+  return warnungen;
+}
+
+/* Baut das Export-Objekt in derselben Schlüssel-Reihenfolge wie die bestehende regeln.json */
+function baueExport() {
+  return {
+    profile: konfig.profile.map(p => ({
+      name: p.name,
+      ortsHinweis: p.ortsHinweis ?? "",
+      lat: Math.round(p.lat * 10) / 10,   // Sicherheitsnetz: grob runden
+      lon: Math.round(p.lon * 10) / 10,
+      themaSecret: p.themaSecret ?? "",
+      regeln: p.regeln.map(r => {
+        const bedingungen = {};
+        for (const b of BAUSTEINE) {
+          if (r.bedingungen[b.schluessel] !== undefined) bedingungen[b.schluessel] = r.bedingungen[b.schluessel];
+        }
+        return {
+          name: r.name, emoji: r.emoji || "🔔", aktiv: !!r.aktiv,
+          zeitfensterStunden: r.zeitfensterStunden ?? 48,
+          nurVonUhr: r.nurVonUhr ?? 0, nurBisUhr: r.nurBisUhr ?? 24,
+          mindestdauerStunden: r.mindestdauerStunden ?? 2,
+          bedingungen,
+        };
+      }),
+    })),
+  };
+}
+
+let letzterExportText = "";
+
+$("#json-erzeugen").addEventListener("click", () => {
+  const warnungen = pruefeEntwurf();
+  const bereich = $("#json-warnungen");
+  bereich.innerHTML = warnungen.map(w => `<div class="warnung">⚠️ ${textSicher(w)}</div>`).join("");
+  letzterExportText = JSON.stringify(baueExport(), null, 2) + "\n";
+  $("#json-ausgabe").textContent = letzterExportText;
+  $("#json-ausgabe-karte").style.display = "";
+});
+
+$("#json-herunterladen").addEventListener("click", () => {
+  const blob = new Blob([letzterExportText], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "regeln.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$("#json-kopieren").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(letzterExportText);
+    $("#json-kopieren").textContent = "✔️ Kopiert!";
+    setTimeout(() => { $("#json-kopieren").textContent = "📋 Kopieren"; }, 2000);
+  } catch (fehler) {
+    alert("Kopieren nicht möglich – bitte den Text oben markieren und manuell kopieren.");
+  }
+});
+
+/* ---------- Start ---------- */
+function zeichneAlles() {
+  zeichneProfilAuswahl();
+  zeichneRegeln();
+}
+konfig = ladeEntwurf();
+zeichneAlles();
+</script>
+</body>
+</html>
