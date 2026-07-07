@@ -7,5 +7,10 @@
   "triggers": {
     // stündliche Wetter-Prüfung (Minute 23, wie beim bisherigen Wächter)
     "crons": ["23 * * * *"]
-  }
+  },
+  // Speicher (KV): merkt sich pro Nutzer Ort + Regeln + Push-Abo.
+  // Die ID ist eine Adresse, kein Geheimnis.
+  "kv_namespaces": [
+    { "binding": "SPEICHER", "id": "23cf2273523d452bb0416cd3788ecbcf" }
+  ]
 }
