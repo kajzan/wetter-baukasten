@@ -1,22 +1,29 @@
 /*
- * Wetter-Wächter-Dienst – Phase 1: Grundgerüst + Push-Test
- * ========================================================
- * Läuft als Cloudflare Worker (Gratis-Stufe). Aufgaben in dieser Phase:
- *   GET  /               -> freundliche Test-Seite (Push aufs Handy ausprobieren)
- *   GET  /api/status     -> Lebenszeichen als JSON (für Technik/Überwachung)
- *   POST /api/test-push  -> schickt eine Test-Nachricht über ntfy.sh
- *   Zeitplan (stündlich) -> Platzhalter; die Wetter-Prüfung folgt in Phase 2/3
+ * Wetter-Wächter-Dienst – Phase 1: Grundgerüst + Browser-Push-Beweis
+ * ==================================================================
+ * Läuft als Cloudflare Worker (Gratis-Stufe).
+ *   GET  /                  -> Test-Seite (Browser-Push ausprobieren)
+ *   GET  /sw.js             -> Service Worker (empfängt Push im Browser)
+ *   GET  /api/status        -> Lebenszeichen als JSON
+ *   GET  /api/vapid-public  -> öffentlicher VAPID-Schlüssel (zum Abonnieren)
+ *   POST /api/test-push-web -> schickt sofort einen Browser-Push an das Abo
+ *   Zeitplan (stündlich)    -> Platzhalter; Wetter-Prüfung folgt in Phase 2/3
  *
  * Datenschutz-Grundsätze (gelten für alle Ausbaustufen):
- *   - Koordinaten nur grob (1 Nachkommastelle), Rundung zusätzlich serverseitig
+ *   - Koordinaten nur grob (1 Nachkommastelle)
  *   - Push-Nachrichten enthalten nie Ortsangaben
- *   - Geheime ntfy-Themen werden nicht gespeichert und nicht protokolliert
- *   - Datensparsamkeit: es wird nur gespeichert, was der Dienst wirklich braucht
+ *   - geheime Schlüssel stehen nur als Cloudflare-Secret, nie im Code/Log
  */
+
+import { sendeWebPush } from "./webpush.js";
+
+// Öffentlicher VAPID-Schlüssel (darf öffentlich sein). Der zugehörige private
+// Schlüssel liegt ausschließlich als Cloudflare-Secret VAPID_PRIVATE.
+const VAPID_PUBLIC = "BGGFfZkFxEpdcdg4xMGoR3VOqtmFQ4PQJ368iRL7q6oGBISDRvSUhzdorcwaVbdQIHg7kq5dXGa_pYJmGpZ2JXk";
+const VAPID_SUBJECT = "mailto:wetter-waechter@users.noreply.github.com";
 
 const JSON_KOPF = {
   "Content-Type": "application/json; charset=utf-8",
-  // Vorläufig offen für Tests; wird in Phase 3 mit der Anmeldung verschärft.
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -26,27 +33,34 @@ function jsonAntwort(daten, status = 200) {
   return new Response(JSON.stringify(daten), { status, headers: JSON_KOPF });
 }
 
-/* ntfy-Themen: nur harmlose Zeichen, damit nichts in die URL geschmuggelt wird */
-function themaGueltig(thema) {
-  return typeof thema === "string" && /^[A-Za-z0-9_-]{4,64}$/.test(thema);
+/* Nur echte Push-Dienste zulassen (Schutz gegen Missbrauch als Weiterleitung). */
+function erlaubterPushEndpunkt(endpunkt) {
+  let host;
+  try { host = new URL(endpunkt).host; } catch { return false; }
+  return host === "fcm.googleapis.com"
+      || host === "web.push.apple.com"
+      || host.endsWith(".push.apple.com")
+      || host.endsWith(".push.services.mozilla.com")
+      || host.endsWith(".notify.windows.com");
 }
 
-async function sendePush(thema, titel, text, token) {
-  const kopf = { "Content-Type": "application/json" };
-  // Mit Zugangs-Schlüssel zählt die ntfy-Grenze pro Konto statt pro Sammel-Adresse
-  // (behebt die "429"-Drosselung beim Senden aus Cloudflare heraus).
-  if (token) kopf["Authorization"] = "Bearer " + token;
-  const versuch = await fetch("https://ntfy.sh/", {
-    method: "POST",
-    headers: kopf,
-    body: JSON.stringify({ topic: thema, title: titel, message: text }),
-  });
-  if (!versuch.ok) {
-    let begruendung = "";
-    try { begruendung = (await versuch.text()).slice(0, 300); } catch { /* egal */ }
-    throw new Error("ntfy Status " + versuch.status + (begruendung ? " – " + begruendung : ""));
-  }
-}
+/* Service Worker: empfängt den Push und zeigt die Benachrichtigung an. */
+const SERVICE_WORKER = `
+self.addEventListener("push", (event) => {
+  let daten = { title: "Wetter-Wächter", body: "" };
+  try { daten = event.data.json(); } catch (e) { if (event.data) daten.body = event.data.text(); }
+  event.waitUntil(self.registration.showNotification(daten.title || "Wetter-Wächter", {
+    body: daten.body || "",
+    icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%A6%EF%B8%8F%3C/text%3E%3C/svg%3E",
+    tag: daten.tag || undefined,
+    data: daten,
+  }));
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow(self.registration.scope));
+});
+`;
 
 /* Kleine, in sich geschlossene Test-Seite (kein externer Code, kein Tracking). */
 const TEST_SEITE = `<!DOCTYPE html>
@@ -65,78 +79,80 @@ const TEST_SEITE = `<!DOCTYPE html>
   .karte { background:#fff; border:1px solid #dde4ea; border-radius:12px; padding:16px; margin:14px 0; }
   .ok { color:#15803d; font-weight:600; }
   ol { padding-left:20px; } li { margin:8px 0; }
-  code { background:#eef2f6; padding:2px 6px; border-radius:6px; font-size:.95em; word-break:break-all; }
-  button { border:0; border-radius:10px; padding:12px 16px; font-size:1rem; font-weight:600;
+  button { border:0; border-radius:10px; padding:14px 16px; font-size:1rem; font-weight:600;
            background:#2563eb; color:#fff; cursor:pointer; width:100%; }
-  button.zart { background:#e8effd; color:#2563eb; }
-  a.knopf { display:inline-block; text-decoration:none; text-align:center; }
-  .reihe { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-  .reihe > * { flex:1; min-width:140px; }
-  #ergebnis { margin-top:12px; font-weight:600; }
+  #ergebnis { margin-top:12px; font-weight:600; white-space:pre-wrap; }
   .hinweis { font-size:.86rem; color:#5b6b7b; }
 </style>
 </head>
 <body>
 <main>
   <h1>🌦️ Wetter-Wächter-Dienst</h1>
-  <p><span class="ok">✅ Der Dienst läuft.</span> Diese Seite ist nur zum Testen der Push-Nachrichten
-  gedacht – die richtige App entsteht in den nächsten Schritten.</p>
+  <p><span class="ok">✅ Der Dienst läuft.</span> Diese Seite testet den Versand von
+  <b>Browser-Push</b> – die richtige App entsteht in den nächsten Schritten.</p>
 
   <div class="karte">
-    <h2 style="font-size:1.05rem;margin-top:0">Push aufs Handy testen</h2>
-    <p>Für den Test benutzen wir ein <b>frisches Zufalls-Thema</b> – dein bestehendes geheimes Thema bleibt unberührt.</p>
-    <ol>
-      <li><b>ntfy-App öffnen</b> (die du schon hast), auf <b>+</b> tippen und dieses Thema abonnieren:<br>
-        <code id="thema">…</code>
-        <div class="reihe">
-          <button class="zart" id="kopieren" type="button">📋 Thema kopieren</button>
-          <a class="knopf zart" id="ntfylink" href="#" target="_blank" rel="noopener">🔗 In ntfy öffnen</a>
-        </div>
-      </li>
-      <li><b>Test-Nachricht senden:</b>
-        <div style="margin-top:8px"><button id="senden" type="button">📤 Test-Nachricht senden</button></div>
-        <div id="ergebnis"></div>
-      </li>
-      <li>Aufs Handy schauen – die Nachricht sollte innerhalb weniger Sekunden ankommen. 🎉</li>
-    </ol>
-    <p class="hinweis">Danach kannst du das Test-Thema in der ntfy-App wieder entfernen.</p>
+    <h2 style="font-size:1.05rem;margin-top:0">Browser-Push testen</h2>
+    <p>Ein Tipp genügt: Der Browser fragt nach Erlaubnis, danach kommt sofort eine Test-Nachricht.
+    <b>Keine Zusatz-App nötig.</b></p>
+    <p class="hinweis">📱 <b>iPhone/iPad:</b> vorher über das Teilen-Symbol „Zum Home-Bildschirm“ hinzufügen
+    und die Seite von dort öffnen – sonst erlaubt Apple keinen Push.</p>
+    <button id="anmelden" type="button">🔔 Benachrichtigungen erlauben & testen</button>
+    <div id="ergebnis"></div>
   </div>
 </main>
 <script>
-  // Zufälliges, nicht erratbares Test-Thema erzeugen (nur im Browser)
-  const zufall = crypto.getRandomValues(new Uint8Array(9));
-  const thema = "wetter-test-" + Array.from(zufall, b => b.toString(36)).join("").slice(0, 12);
-  document.getElementById("thema").textContent = thema;
-  document.getElementById("ntfylink").href = "https://ntfy.sh/" + thema;
+const VAPID_PUBLIC = "${VAPID_PUBLIC}";
 
-  document.getElementById("kopieren").addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(thema);
-      document.getElementById("kopieren").textContent = "✔️ Kopiert!";
-    } catch { alert("Bitte das Thema von Hand markieren und kopieren."); }
-  });
+function b64urlZuBytes(s) {
+  const pad = (4 - (s.length % 4)) % 4;
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
+  const roh = atob(b64);
+  return Uint8Array.from(roh, (c) => c.charCodeAt(0));
+}
 
-  document.getElementById("senden").addEventListener("click", async () => {
-    const ausgabe = document.getElementById("ergebnis");
-    ausgabe.textContent = "Sende …"; ausgabe.style.color = "";
-    try {
-      const antwort = await fetch("/api/test-push", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ thema }),
-      });
-      const daten = await antwort.json();
-      const schluessel = " (Schlüssel aktiv: " + (daten.schluesselAktiv ? "ja" : "nein") + ")";
-      if (antwort.ok && daten.ok) {
-        ausgabe.textContent = "✅ Gesendet! Schau jetzt auf dein Handy." + schluessel;
-        ausgabe.style.color = "#15803d";
-      } else {
-        ausgabe.textContent = "⚠️ " + (daten.fehler || "Unbekannter Fehler.") + schluessel;
-        ausgabe.style.color = "#b91c1c";
-      }
-    } catch (fehler) {
-      ausgabe.textContent = "⚠️ Netzwerkfehler: " + fehler.message;
-      ausgabe.style.color = "#b91c1c";
+function zeige(text, gut) {
+  const e = document.getElementById("ergebnis");
+  e.textContent = text; e.style.color = gut ? "#15803d" : "#b91c1c";
+}
+
+document.getElementById("anmelden").addEventListener("click", async () => {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return zeige("Dieser Browser unterstützt leider keine Push-Nachrichten.", false);
     }
-  });
+    zeige("Registriere …", true);
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+
+    const erlaubnis = await Notification.requestPermission();
+    if (erlaubnis !== "granted") {
+      return zeige("Ohne Erlaubnis können keine Nachrichten kommen. (Erlaubnis: " + erlaubnis + ")", false);
+    }
+
+    let abo = await reg.pushManager.getSubscription();
+    if (!abo) {
+      abo = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: b64urlZuBytes(VAPID_PUBLIC),
+      });
+    }
+
+    zeige("Sende Test-Nachricht …", true);
+    const antwort = await fetch("/api/test-push-web", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(abo),
+    });
+    const daten = await antwort.json();
+    if (antwort.ok && daten.ok) {
+      zeige("✅ Gesendet! Innerhalb weniger Sekunden sollte die Benachrichtigung erscheinen. 🎉", true);
+    } else {
+      zeige("⚠️ " + (daten.fehler || "Unbekannter Fehler."), false);
+    }
+  } catch (fehler) {
+    zeige("⚠️ Fehler: " + fehler.message, false);
+  }
+});
 </script>
 </body>
 </html>`;
@@ -156,32 +172,46 @@ export default {
       });
     }
 
-    if (anfrage.method === "GET" && url.pathname === "/api/status") {
-      return jsonAntwort({
-        dienst: "wetter-waechter",
-        phase: 1,
-        status: "ok",
-        zeit: new Date().toISOString(),
+    if (anfrage.method === "GET" && url.pathname === "/sw.js") {
+      return new Response(SERVICE_WORKER, {
+        status: 200,
+        headers: { "Content-Type": "application/javascript; charset=utf-8" },
       });
     }
 
-    if (anfrage.method === "POST" && url.pathname === "/api/test-push") {
-      let daten;
-      try {
-        daten = await anfrage.json();
-      } catch {
-        return jsonAntwort({ fehler: "Bitte JSON mit dem Feld 'thema' senden." }, 400);
+    if (anfrage.method === "GET" && url.pathname === "/api/status") {
+      return jsonAntwort({ dienst: "wetter-waechter", phase: 1, status: "ok", zeit: new Date().toISOString() });
+    }
+
+    if (anfrage.method === "GET" && url.pathname === "/api/vapid-public") {
+      return jsonAntwort({ vapidPublic: VAPID_PUBLIC });
+    }
+
+    if (anfrage.method === "POST" && url.pathname === "/api/test-push-web") {
+      if (!env.VAPID_PRIVATE) {
+        return jsonAntwort({ fehler: "Der Schlüssel VAPID_PRIVATE ist im Dienst noch nicht hinterlegt." }, 500);
       }
-      if (!themaGueltig(daten.thema)) {
-        return jsonAntwort({ fehler: "Ungültiges Thema (4-64 Zeichen: Buchstaben, Zahlen, - und _)." }, 400);
+      let abo;
+      try { abo = await anfrage.json(); } catch { return jsonAntwort({ fehler: "Ungültige Anfrage." }, 400); }
+      if (!abo || !abo.endpoint || !abo.keys || !abo.keys.p256dh || !abo.keys.auth) {
+        return jsonAntwort({ fehler: "Unvollständiges Abo (endpoint/keys fehlen)." }, 400);
       }
-      const schluesselAktiv = Boolean(env.NTFY_TOKEN);   // nur ja/nein, nie der Schlüssel selbst
+      if (!erlaubterPushEndpunkt(abo.endpoint)) {
+        return jsonAntwort({ fehler: "Unbekannter Push-Dienst – abgelehnt." }, 400);
+      }
       try {
-        await sendePush(daten.thema, "✅ Wetter-Wächter-Dienst",
-          "Der neue Dienst läuft und kann Push-Nachrichten senden!", env.NTFY_TOKEN);
-        return jsonAntwort({ ok: true, schluesselAktiv });
+        const inhalt = JSON.stringify({
+          title: "✅ Browser-Push funktioniert",
+          body: "Der Wetter-Wächter kann dir jetzt direkt aufs Handy schreiben – ganz ohne Zusatz-App.",
+          tag: "wetter-test",
+        });
+        const antwort = await sendeWebPush(abo, inhalt, VAPID_PUBLIC, env.VAPID_PRIVATE, VAPID_SUBJECT);
+        if (antwort.ok || antwort.status === 201) return jsonAntwort({ ok: true });
+        let grund = "";
+        try { grund = (await antwort.text()).slice(0, 300); } catch { /* egal */ }
+        return jsonAntwort({ fehler: "Push-Dienst Status " + antwort.status + (grund ? " – " + grund : "") }, 502);
       } catch (fehler) {
-        return jsonAntwort({ fehler: "Senden fehlgeschlagen: " + fehler.message, schluesselAktiv }, 502);
+        return jsonAntwort({ fehler: "Senden fehlgeschlagen: " + fehler.message }, 502);
       }
     }
 
