@@ -150,7 +150,8 @@ export default {
             datum, text: blockZuText(datum, gefunden[datum]),
           }));
         });
-        return jsonAntwort({ ok: true, treffer, tage: tagesZusammenfassung(vorhersage) });
+        return jsonAntwort({ ok: true, treffer, tage: tagesZusammenfassung(vorhersage),
+          stunden: vorhersage.hourly });
       } catch (f) {
         return jsonAntwort({ ok: false, fehler: "Wetterdaten gerade nicht verfügbar (" + f.message + ")." }, 502);
       }
