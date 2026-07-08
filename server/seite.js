@@ -83,7 +83,13 @@ export function appSeite(vapidPublic) {
   .karten-schalter { margin-top:10px; }
   #karte { height:250px; border-radius:10px; margin-top:10px; display:none; overflow:hidden; z-index:0; }
   #karte.offen { display:block; }
-  .leaflet-container { font:inherit; }
+  .leaflet-container { font:inherit; background:var(--hg); }
+  #radar-karte { height:300px; border-radius:10px; overflow:hidden; z-index:0; }
+  #radar-steuer { display:flex; align-items:center; gap:10px; margin-top:10px; }
+  #radar-steuer input[type=range] { flex:1; accent-color:var(--akzent); }
+  .radar-legende { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:.78rem; color:var(--text2); }
+  .radar-balken { flex:1; height:8px; border-radius:4px;
+    background:linear-gradient(90deg,#7ec7ff,#2f7bff,#7b3ff2,#e0447a,#f7b500); }
 
   /* Vorlagen */
   .vorlagen { display:flex; flex-wrap:wrap; gap:8px; }
@@ -169,7 +175,7 @@ export function appSeite(vapidPublic) {
   <section id="reiter-wuensche" class="reiter sichtbar">
     <div id="nudge"></div>
     <section class="karte">
-      <h2>📍 Dein Ort</h2>
+      <h2 id="ort-titel">📍 Dein Ort</h2>
       <div id="ort-anzeige" style="display:none">
         <div class="ort-kopf">
           <span class="pin">📍</span>
@@ -206,6 +212,19 @@ export function appSeite(vapidPublic) {
       <p class="hinweis" id="wetter-hinweis">Wähle zuerst im Reiter „Wünsche“ deinen Ort.</p>
       <div id="wetter-tage"></div>
       <p class="hinweis" style="margin-top:12px">Tipp: Tag antippen für Stundenwerte und Diagramme.</p>
+    </section>
+    <section class="karte" id="radar-karte-box" style="display:none">
+      <h2>🌧️ Regen-Radar</h2>
+      <p class="hinweis" style="margin-top:-4px">Aktueller Niederschlag &amp; die nächsten ~1–2 Stunden.</p>
+      <div id="radar-karte"></div>
+      <div id="radar-steuer">
+        <button class="knopf zart" id="radar-play" style="padding:7px 12px">▶︎</button>
+        <input type="range" id="radar-schieber" min="0" max="0" value="0" step="1">
+        <span id="radar-zeit" class="hinweis"></span>
+      </div>
+      <div class="radar-legende">
+        <span>leicht</span><div class="radar-balken"></div><span>stark</span>
+      </div>
     </section>
   </section>
 
@@ -247,6 +266,8 @@ var BAUSTEINE = [
   { s:"tempMax",       bez:"Temperatur höchstens",  einheit:"°C",   min:-20, max:45,  schritt:1 },
   { s:"windMin",       bez:"Wind mindestens",       einheit:"km/h", min:0,   max:120, schritt:1 },
   { s:"windMax",       bez:"Wind höchstens",        einheit:"km/h", min:0,   max:120, schritt:1 },
+  { s:"boeMin",        bez:"Windböen mindestens",   einheit:"km/h", min:0,   max:150, schritt:1 },
+  { s:"boeMax",        bez:"Windböen höchstens",    einheit:"km/h", min:0,   max:150, schritt:1 },
   { s:"regenMax",      bez:"Regen höchstens",       einheit:"mm/h", min:0,   max:10,  schritt:0.1 },
   { s:"bewoelkungMin", bez:"Bewölkung mindestens",  einheit:"%",    min:0,   max:100, schritt:5 },
   { s:"bewoelkungMax", bez:"Bewölkung höchstens",   einheit:"%",    min:0,   max:100, schritt:5 },
@@ -254,7 +275,7 @@ var BAUSTEINE = [
   { s:"uvMin",         bez:"UV-Index mindestens",   einheit:"UV",   min:0,   max:12,  schritt:1 },
   { s:"uvMax",         bez:"UV-Index höchstens",    einheit:"UV",   min:0,   max:12,  schritt:1 }
 ];
-var STANDARDWERT = { tempMin:15, tempMax:25, windMin:5, windMax:20, regenMax:0,
+var STANDARDWERT = { tempMin:15, tempMax:25, windMin:5, windMax:20, boeMin:20, boeMax:60, regenMax:0,
   bewoelkungMin:20, bewoelkungMax:80, feuchteMax:70, uvMin:3, uvMax:6 };
 var SEKTOREN = ["N","NO","O","SO","S","SW","W","NW"];
 var PFEIL_VON = ["↓","↙","←","↖","↑","↗","→","↘"];
@@ -267,6 +288,7 @@ var VORLAGEN = [
   { name:"Pflanztag", emoji:"🌱", nurVonUhr:8, nurBisUhr:20, mindestdauerStunden:4, bedingungen:{ tempMin:15, tempMax:24, bewoelkungMin:30, bewoelkungMax:70, regenMax:0.2 } },
   { name:"Wäschetag", emoji:"🧺", nurVonUhr:9, nurBisUhr:19, mindestdauerStunden:4, bedingungen:{ tempMin:15, windMin:5, windMax:30, regenMax:0, feuchteMax:65 } },
   { name:"Lauf-Wetter", emoji:"🏃", nurVonUhr:6, nurBisUhr:21, mindestdauerStunden:1, bedingungen:{ tempMin:5, tempMax:20, windMax:20, regenMax:0.2 } },
+  { name:"Fahrrad-Wetter", emoji:"🚲", nurVonUhr:6, nurBisUhr:20, mindestdauerStunden:1, bedingungen:{ tempMin:8, tempMax:28, windMax:20, boeMax:35, regenMax:0.1 } },
   { name:"Sonnencreme", emoji:"🧴", nurVonUhr:9, nurBisUhr:18, mindestdauerStunden:2, bedingungen:{ uvMin:6 } },
   { name:"Sturm-Warnung", emoji:"⛈️", nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1, bedingungen:{ windMin:60 } }
 ];
@@ -289,6 +311,7 @@ Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (
     knopf.classList.add("aktiv");
     Array.prototype.forEach.call(document.querySelectorAll(".reiter"), function (r) { r.classList.remove("sichtbar"); });
     $("reiter-" + knopf.dataset.reiter).classList.add("sichtbar");
+    if (knopf.dataset.reiter === "wetter") oeffneRadar();
     window.scrollTo(0, 0);
   });
 });
@@ -345,24 +368,28 @@ function setzeOrt(name, lat, lon) {
   speichere(); zeichneOrt(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
   if (karte && window.L) { var p = [zustand.ort.lat, zustand.ort.lon];
     if (kartenMarker) kartenMarker.setLatLng(p); else kartenMarker = L.marker(p).addTo(karte); karte.setView(p, 9); }
+  if (radarKarte && window.L) { var pr = [zustand.ort.lat, zustand.ort.lon];
+    if (radarMarker) radarMarker.setLatLng(pr); radarKarte.setView(pr, radarKarte.getZoom()); }
 }
 $("ort-aendern").addEventListener("click", function () {
-  $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-eingabe").focus();
+  schliesseKarte();
+  $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; $("ort-eingabe").focus();
 });
 function zeichneOrt() {
   if (zustand.ort) {
     $("ort-name").textContent = zustand.ort.name;
     $("ort-koord").textContent = zustand.ort.lat + " / " + zustand.ort.lon + " · gerundet";
-    $("ort-anzeige").style.display = ""; $("ort-suche").style.display = "none";
-  } else { $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; }
+    $("ort-anzeige").style.display = ""; $("ort-suche").style.display = "none"; $("ort-titel").style.display = "none";
+  } else { $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; }
 }
 
 /* Karte (Leaflet, optional – lädt extern) */
 var karte = null, kartenMarker = null;
+function schliesseKarte() { $("karte").classList.remove("offen"); $("karte-toggle").textContent = "🗺️ Auf Karte wählen"; }
 $("karte-toggle").addEventListener("click", function () {
-  var el = $("karte"); var offen = el.classList.toggle("offen");
-  this.textContent = offen ? "🗺️ Karte schließen" : "🗺️ Auf Karte wählen";
-  if (offen) initKarte();
+  var el = $("karte");
+  if (el.classList.contains("offen")) { schliesseKarte(); return; }
+  el.classList.add("offen"); this.textContent = "🗺️ Karte schließen"; initKarte();
 });
 function initKarte() {
   if (karte) { setTimeout(function () { karte.invalidateSize(); }, 50); return; }
@@ -371,9 +398,53 @@ function initKarte() {
   karte = L.map("karte").setView(start, zustand.ort ? 9 : 4);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(karte);
   if (zustand.ort) kartenMarker = L.marker(start).addTo(karte);
-  karte.on("click", function (e) { reverseUndSetze(runde(e.latlng.lat), runde(e.latlng.lng)); });
+  // Klick auf Karte: Ort übernehmen UND Karte schließen
+  karte.on("click", function (e) { reverseUndSetze(runde(e.latlng.lat), runde(e.latlng.lng)); schliesseKarte(); });
   setTimeout(function () { karte.invalidateSize(); }, 50);
 }
+
+/* ---------- Wetterkarte: Regen-Radar (RainViewer) ---------- */
+var radarKarte = null, radarMarker = null, radarFrames = [], radarLayer = null, radarIndex = 0, radarTimer = null;
+function oeffneRadar() {
+  if (!zustand.ort) { $("radar-karte-box").style.display = "none"; return; }
+  $("radar-karte-box").style.display = "";
+  var mitte = [zustand.ort.lat, zustand.ort.lon];
+  if (!window.L) { $("radar-karte").innerHTML = '<p class="hinweis" style="padding:10px">Karte konnte nicht geladen werden (keine Verbindung?).</p>'; return; }
+  if (!radarKarte) {
+    radarKarte = L.map("radar-karte").setView(mitte, 7);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12, attribution: "© OpenStreetMap" }).addTo(radarKarte);
+    radarMarker = L.marker(mitte).addTo(radarKarte);
+    ladeRadarFrames();
+  } else { radarMarker.setLatLng(mitte); radarKarte.setView(mitte, radarKarte.getZoom()); }
+  setTimeout(function () { radarKarte.invalidateSize(); }, 60);
+}
+function ladeRadarFrames() {
+  fetch("https://api.rainviewer.com/public/weather-maps.json").then(function (a) { return a.json(); }).then(function (d) {
+    var host = d.host, radar = d.radar || {};
+    radarFrames = (radar.past || []).concat(radar.nowcast || []).map(function (f) { return { time: f.time, url: host + f.path }; });
+    if (!radarFrames.length) { $("radar-zeit").textContent = "Kein Radar verfügbar."; return; }
+    $("radar-schieber").max = radarFrames.length - 1;
+    radarIndex = Math.max(0, (radar.past || []).length - 1);
+    $("radar-schieber").value = radarIndex;
+    zeigeRadarFrame(radarIndex);
+  }).catch(function () { $("radar-zeit").textContent = "Radar gerade nicht erreichbar."; });
+}
+function zeigeRadarFrame(i) {
+  if (!radarFrames.length || !window.L || !radarKarte) return;
+  radarIndex = (i + radarFrames.length) % radarFrames.length;
+  var f = radarFrames[radarIndex];
+  var neu = L.tileLayer(f.url + "/256/{z}/{x}/{y}/4/1_1.png", { opacity: 0.7, maxZoom: 12, attribution: "Radar © RainViewer" });
+  neu.addTo(radarKarte);
+  var alt = radarLayer; radarLayer = neu;
+  if (alt) setTimeout(function () { radarKarte.removeLayer(alt); }, 250);
+  $("radar-schieber").value = radarIndex;
+  var d = new Date(f.time * 1000);
+  $("radar-zeit").textContent = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + " Uhr";
+}
+$("radar-schieber").addEventListener("input", function () { stopRadar(); zeigeRadarFrame(parseInt(this.value, 10)); });
+$("radar-play").addEventListener("click", function () { if (radarTimer) stopRadar(); else startRadar(); });
+function startRadar() { if (!radarFrames.length) return; $("radar-play").textContent = "⏸"; radarTimer = setInterval(function () { zeigeRadarFrame(radarIndex + 1); }, 700); }
+function stopRadar() { if (radarTimer) { clearInterval(radarTimer); radarTimer = null; } $("radar-play").textContent = "▶︎"; }
 
 /* ---------- Vorlagen + eigene Regel ---------- */
 function zeichneVorlagen() {
@@ -589,7 +660,8 @@ function zeichneWetter() {
     var kopf = document.createElement("div"); kopf.className = "tag-kopf";
     kopf.innerHTML = '<span class="wt">' + t.wochentag.slice(0,2) + ", " + t.datum.slice(8,10) + "." + t.datum.slice(5,7) + '.</span>'
       + '<span class="icon">' + tagIcon(t.datum) + '</span>'
-      + '<span class="werte">' + t.tempMin + "–" + t.tempMax + " °C · 💨 " + t.windMax + (t.windRichtung ? " " + t.windRichtung : "")
+      + '<span class="werte">' + t.tempMin + "–" + t.tempMax + " °C · 💨 " + t.windMax
+      + (t.boeMax != null ? " 🌬️" + t.boeMax : "") + (t.windRichtung ? " " + t.windRichtung : "")
       + (t.uvMax != null ? " · UV " + t.uvMax : "") + '</span><span class="pfeil">▸</span>';
     kopf.addEventListener("click", function () { offeneTage[t.datum] = !offeneTage[t.datum]; tag.classList.toggle("offen");
       if (offeneTage[t.datum] && !det.dataset.gefuellt) { det.innerHTML = detailHtml(t.datum); det.dataset.gefuellt = "1"; } });
@@ -617,21 +689,46 @@ function detailHtml(datum) {
   idx.forEach(function (i) {
     var dir = s.wind_direction_10m ? PFEIL_VON[Math.round(s.wind_direction_10m[i] / 45) % 8] : "";
     var uv = s.uv_index ? Math.round(s.uv_index[i]) : null;
+    var boe = s.wind_gusts_10m ? Math.round(s.wind_gusts_10m[i]) : null;
     stunden.push('<div class="stunde"><div class="h">' + s.time[i].slice(11,13) + '</div>'
       + '<div class="i">' + (s.weather_code ? wetterIcon(s.weather_code[i]) : "") + '</div>'
       + '<div class="t">' + Math.round(s.temperature_2m[i]) + '°</div>'
       + '<div>' + dir + ' ' + Math.round(s.wind_speed_10m[i]) + '</div>'
+      + (boe != null ? '<div>🌬️ ' + boe + '</div>' : '')
       + '<div>🌧️ ' + (Math.round(s.precipitation[i] * 10) / 10) + '</div>'
       + (uv != null ? '<div>UV ' + uv + '</div>' : '') + '</div>');
   });
   var std = idx.map(function (i) { return parseInt(s.time[i].slice(11,13), 10); });
   var temp = idx.map(function (i) { return s.temperature_2m[i]; });
   var wind = idx.map(function (i) { return s.wind_speed_10m[i]; });
+  var boen = s.wind_gusts_10m ? idx.map(function (i) { return s.wind_gusts_10m[i]; }) : null;
   var regen = idx.map(function (i) { return s.precipitation[i]; });
   return '<div class="stundenreihe">' + stunden.join("") + '</div>'
-    + linienDiagramm("🌡️ Temperatur", "°C", std, temp, "#e11d48")
-    + linienDiagramm("💨 Wind", "km/h", std, wind, "#0891b2")
+    + tempWindDiagramm(std, temp, wind, boen)
     + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb");
+}
+/* Doppelachsen-Diagramm: Temperatur (links, rot) + Wind/Böen (rechts, türkis). */
+function tempWindDiagramm(std, temp, wind, boen) {
+  var n = temp.length; if (!n) return "";
+  var W = 320, H = 100, l = 26, r = 30, o = 12, u = 20;
+  var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
+  var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
+  var px = function (i) { return l + i * (W - l - r) / (n - 1); };
+  var yT = function (v) { return o + (1 - (v - tmin) / (tmax - tmin)) * (H - o - u); };
+  var yW = function (v) { return o + (1 - v / wmax) * (H - o - u); };
+  var tempFarbe = "#e11d48", windFarbe = "#0891b2";
+  var linie = function (werte, f, mapy, extra) { return '<polyline fill="none" stroke="' + f + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ' + (extra || "") + ' points="'
+    + werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ") + '"/>'; };
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur und Wind">'
+    + '<text x="2" y="' + (yT(tmax) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmax) + '°</text>'
+    + '<text x="2" y="' + (yT(tmin) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmin) + '°</text>'
+    + '<text x="' + (W - 2) + '" y="' + (yW(wmax) + 6).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">' + Math.round(wmax) + '</text>'
+    + '<text x="' + (W - 2) + '" y="' + (yW(0) - 1).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">0</text>'
+    + (boen ? linie(boen, windFarbe, yW, 'stroke-dasharray="3 3" opacity=".5"') : "")
+    + linie(wind, windFarbe, yW) + linie(temp, tempFarbe, yT)
+    + xBeschriftung(std).map(function (p) { return '<text x="' + px(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("")
+    + '</svg>';
+  return '<div class="diagramm"><div class="titel"><span><b style="color:' + tempFarbe + '">Temperatur °C</b> · <b style="color:' + windFarbe + '">Wind km/h</b>' + (boen ? " · Böen (gestrichelt)" : "") + '</span></div>' + svg + '</div>';
 }
 function xBeschriftung(std) {
   var t = [];

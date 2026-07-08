@@ -27,7 +27,7 @@ export function windSektor(grad) {
 /* Prüft eine einzelne Stunde gegen alle gesetzten Grenzwerte.
    Der 5-Werte-Kern entspricht stunde_passt() aus waechter.py;
    windDir/uv werden nur geprüft, wenn die Regel sie nutzt. */
-export function stundePasst(bedingungen, temp, wind, regen, wolken, feuchte, windDir, uv) {
+export function stundePasst(bedingungen, temp, wind, regen, wolken, feuchte, windDir, uv, boe) {
   const mindestens = (k, w) => { const g = bedingungen[k]; return g === undefined || g === null || w >= g; };
   const hoechstens = (k, w) => { const g = bedingungen[k]; return g === undefined || g === null || w <= g; };
 
@@ -36,7 +36,8 @@ export function stundePasst(bedingungen, temp, wind, regen, wolken, feuchte, win
     && hoechstens("regenMax", regen)
     && mindestens("bewoelkungMin", wolken) && hoechstens("bewoelkungMax", wolken)
     && hoechstens("feuchteMax", feuchte)
-    && mindestens("uvMin", uv) && hoechstens("uvMax", uv);
+    && mindestens("uvMin", uv) && hoechstens("uvMax", uv)
+    && mindestens("boeMin", boe) && hoechstens("boeMax", boe);
   if (!kern) return false;
 
   const richtungen = bedingungen.windRichtungen;
@@ -69,8 +70,9 @@ export function findeTreffer(regel, vorhersage, jetztLokalMs) {
     if (kern.some((w) => w === null || w === undefined)) continue;
     const windDir = stunden.wind_direction_10m ? stunden.wind_direction_10m[i] : undefined;
     const uv = stunden.uv_index ? stunden.uv_index[i] : undefined;
-    if (stundePasst(bedingungen, ...kern, windDir, uv)) {
-      passende.push({ zeitMs, werte: [...kern, windDir, uv] });
+    const boe = stunden.wind_gusts_10m ? stunden.wind_gusts_10m[i] : undefined;
+    if (stundePasst(bedingungen, ...kern, windDir, uv, boe)) {
+      passende.push({ zeitMs, werte: [...kern, windDir, uv, boe] });
     }
   }
 
@@ -98,7 +100,7 @@ export async function holeVorhersage(lat, lon, tage = 7, fetchFn = fetch) {
   const parameter = new URLSearchParams({
     latitude: String(rundeKoordinate(lat)),
     longitude: String(rundeKoordinate(lon)),
-    hourly: "temperature_2m,wind_speed_10m,wind_direction_10m,precipitation,"
+    hourly: "temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,"
           + "cloud_cover,relative_humidity_2m,uv_index,weather_code",
     forecast_days: String(tage),
     timezone: "auto",
@@ -148,6 +150,7 @@ export function tagesZusammenfassung(vorhersage) {
     const temps = nimm("temperature_2m");
     if (!temps.length) continue;
     const winde = nimm("wind_speed_10m");
+    const boen = nimm("wind_gusts_10m");
     const regen = nimm("precipitation");
     const wolken = nimm("cloud_cover");
     const uv = nimm("uv_index");
@@ -157,6 +160,7 @@ export function tagesZusammenfassung(vorhersage) {
       tempMin: Math.round(Math.min(...temps)),
       tempMax: Math.round(Math.max(...temps)),
       windMax: Math.round(Math.max(...winde)),
+      boeMax: boen.length ? Math.round(Math.max(...boen)) : null,
       windRichtung: mittlereWindrichtung(idx.map((i) => stunden.wind_direction_10m && stunden.wind_direction_10m[i])),
       regenSumme: Math.round(regen.reduce((a, b) => a + b, 0) * 10) / 10,
       wolkenMittel: Math.round(wolken.reduce((a, b) => a + b, 0) / wolken.length),
@@ -176,6 +180,7 @@ export function normalisiereRegeln(regeln) {
     return Math.max(min, Math.min(max, z));
   };
   const ERLAUBTE = { tempMin: [-60, 60], tempMax: [-60, 60], windMin: [0, 300], windMax: [0, 300],
+                     boeMin: [0, 300], boeMax: [0, 300],
                      regenMax: [0, 100], bewoelkungMin: [0, 100], bewoelkungMax: [0, 100],
                      feuchteMax: [0, 100], uvMin: [0, 15], uvMax: [0, 15] };
   return regeln.map((r) => {
