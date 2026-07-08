@@ -81,10 +81,8 @@ export function appSeite(vapidPublic) {
   .ort-zeile { display:flex; gap:8px; } .ort-zeile input { flex:1; }
   .ort-zeile .knopf { padding:11px 13px; flex-shrink:0; }
   .karten-schalter { margin-top:10px; }
-  #karte { height:250px; border-radius:10px; margin-top:10px; display:none; overflow:hidden; z-index:0; }
-  #karte.offen { display:block; }
+  #wetterkarte { height:300px; border-radius:10px; margin-top:10px; overflow:hidden; z-index:0; }
   .leaflet-container { font:inherit; background:var(--hg); }
-  #radar-karte { height:300px; border-radius:10px; overflow:hidden; z-index:0; }
   #radar-steuer { display:flex; align-items:center; gap:10px; margin-top:10px; }
   #radar-steuer input[type=range] { flex:1; accent-color:var(--akzent); }
   .radar-legende { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:.78rem; color:var(--text2); }
@@ -191,10 +189,14 @@ export function appSeite(vapidPublic) {
         <div id="ort-ergebnisse"></div>
         <p class="hinweis" style="margin-bottom:0">🔒 Es wird nur eine <b>gerundete</b> Position (~11 km) verwendet – nie dein genauer Standort.</p>
       </div>
-      <div class="karten-schalter">
-        <button class="knopf zart" id="karte-toggle" style="padding:8px 12px;font-size:.85rem">🗺️ Auf Karte wählen</button>
+      <div id="wetterkarte"></div>
+      <div id="radar-steuer">
+        <button class="knopf zart" id="radar-play" style="padding:7px 12px">▶︎</button>
+        <input type="range" id="radar-schieber" min="0" max="0" value="0" step="1">
+        <span id="radar-zeit" class="hinweis"></span>
       </div>
-      <div id="karte"></div>
+      <div class="radar-legende"><span>leicht</span><div class="radar-balken"></div><span>stark</span></div>
+      <p class="hinweis" id="radar-note" style="margin-bottom:0">🗺️ Regen-Radar. Tippe auf die Karte, um deinen Ort zu setzen.</p>
     </section>
 
     <section class="karte">
@@ -211,20 +213,7 @@ export function appSeite(vapidPublic) {
       <h2>🌤️ Vorhersage (7 Tage)</h2>
       <p class="hinweis" id="wetter-hinweis">Wähle zuerst im Reiter „Wünsche“ deinen Ort.</p>
       <div id="wetter-tage"></div>
-      <p class="hinweis" style="margin-top:12px">Tipp: Tag antippen für Stundenwerte und Diagramme.</p>
-    </section>
-    <section class="karte" id="radar-karte-box" style="display:none">
-      <h2>🌧️ Regen-Radar</h2>
-      <p class="hinweis" style="margin-top:-4px">Aktueller Niederschlag &amp; die nächsten ~1–2 Stunden.</p>
-      <div id="radar-karte"></div>
-      <div id="radar-steuer">
-        <button class="knopf zart" id="radar-play" style="padding:7px 12px">▶︎</button>
-        <input type="range" id="radar-schieber" min="0" max="0" value="0" step="1">
-        <span id="radar-zeit" class="hinweis"></span>
-      </div>
-      <div class="radar-legende">
-        <span>leicht</span><div class="radar-balken"></div><span>stark</span>
-      </div>
+      <p class="hinweis" style="margin-top:12px">Tipp: Tag antippen für Stundenwerte und Diagramme. Regen-Radar: Reiter „Wünsche“.</p>
     </section>
   </section>
 
@@ -311,7 +300,6 @@ Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (
     knopf.classList.add("aktiv");
     Array.prototype.forEach.call(document.querySelectorAll(".reiter"), function (r) { r.classList.remove("sichtbar"); });
     $("reiter-" + knopf.dataset.reiter).classList.add("sichtbar");
-    if (knopf.dataset.reiter === "wetter") oeffneRadar();
     window.scrollTo(0, 0);
   });
 });
@@ -366,13 +354,11 @@ $("ort-standort").addEventListener("click", function () {
 function setzeOrt(name, lat, lon) {
   zustand.ort = { name:String(name).slice(0,60), lat:runde(lat), lon:runde(lon) };
   speichere(); zeichneOrt(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
-  if (karte && window.L) { var p = [zustand.ort.lat, zustand.ort.lon];
-    if (kartenMarker) kartenMarker.setLatLng(p); else kartenMarker = L.marker(p).addTo(karte); karte.setView(p, 9); }
-  if (radarKarte && window.L) { var pr = [zustand.ort.lat, zustand.ort.lon];
-    if (radarMarker) radarMarker.setLatLng(pr); radarKarte.setView(pr, radarKarte.getZoom()); }
+  if (wetterKarte && window.L) { var p = [zustand.ort.lat, zustand.ort.lon];
+    if (wetterMarker) wetterMarker.setLatLng(p); else wetterMarker = L.marker(p).addTo(wetterKarte);
+    wetterKarte.setView(p, Math.max(wetterKarte.getZoom(), 8)); }
 }
 $("ort-aendern").addEventListener("click", function () {
-  schliesseKarte();
   $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; $("ort-eingabe").focus();
 });
 function zeichneOrt() {
@@ -384,62 +370,52 @@ function zeichneOrt() {
 }
 
 /* Karte (Leaflet, optional – lädt extern) */
-var karte = null, kartenMarker = null;
-function schliesseKarte() { $("karte").classList.remove("offen"); $("karte-toggle").textContent = "🗺️ Auf Karte wählen"; }
-$("karte-toggle").addEventListener("click", function () {
-  var el = $("karte");
-  if (el.classList.contains("offen")) { schliesseKarte(); return; }
-  el.classList.add("offen"); this.textContent = "🗺️ Karte schließen"; initKarte();
-});
-function initKarte() {
-  if (karte) { setTimeout(function () { karte.invalidateSize(); }, 50); return; }
-  if (!window.L) { $("karte").innerHTML = '<p class="hinweis" style="padding:10px">Karte konnte nicht geladen werden (keine Verbindung?).</p>'; return; }
+/* ---------- Eine Wetterkarte: Regen-Radar + Ortswahl per Klick ---------- */
+var wetterKarte = null, wetterMarker = null, radarFrames = [], radarLayer = null, radarIndex = 0, radarTimer = null;
+function initWetterkarte() {
+  if (wetterKarte) { setTimeout(function () { wetterKarte.invalidateSize(); }, 50); return; }
+  if (!window.L) { $("wetterkarte").innerHTML = '<p class="hinweis" style="padding:10px">Karte konnte nicht geladen werden (keine Verbindung?).</p>'; return; }
   var start = zustand.ort ? [zustand.ort.lat, zustand.ort.lon] : [51, 10];
-  karte = L.map("karte").setView(start, zustand.ort ? 9 : 4);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(karte);
-  if (zustand.ort) kartenMarker = L.marker(start).addTo(karte);
-  // Klick auf Karte: Ort übernehmen UND Karte schließen
-  karte.on("click", function (e) { reverseUndSetze(runde(e.latlng.lat), runde(e.latlng.lng)); schliesseKarte(); });
-  setTimeout(function () { karte.invalidateSize(); }, 50);
-}
-
-/* ---------- Wetterkarte: Regen-Radar (RainViewer) ---------- */
-var radarKarte = null, radarMarker = null, radarFrames = [], radarLayer = null, radarIndex = 0, radarTimer = null;
-function oeffneRadar() {
-  if (!zustand.ort) { $("radar-karte-box").style.display = "none"; return; }
-  $("radar-karte-box").style.display = "";
-  var mitte = [zustand.ort.lat, zustand.ort.lon];
-  if (!window.L) { $("radar-karte").innerHTML = '<p class="hinweis" style="padding:10px">Karte konnte nicht geladen werden (keine Verbindung?).</p>'; return; }
-  if (!radarKarte) {
-    radarKarte = L.map("radar-karte").setView(mitte, 7);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12, attribution: "© OpenStreetMap" }).addTo(radarKarte);
-    radarMarker = L.marker(mitte).addTo(radarKarte);
-    ladeRadarFrames();
-  } else { radarMarker.setLatLng(mitte); radarKarte.setView(mitte, radarKarte.getZoom()); }
-  setTimeout(function () { radarKarte.invalidateSize(); }, 60);
+  wetterKarte = L.map("wetterkarte").setView(start, zustand.ort ? 8 : 4);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12, attribution: "© OpenStreetMap" }).addTo(wetterKarte);
+  if (zustand.ort) wetterMarker = L.marker(start).addTo(wetterKarte);
+  // Klick auf die Karte setzt den Ort – die Karte bleibt offen
+  wetterKarte.on("click", function (e) { reverseUndSetze(runde(e.latlng.lat), runde(e.latlng.lng)); });
+  ladeRadarFrames();
+  setTimeout(function () { wetterKarte.invalidateSize(); }, 60);
 }
 function ladeRadarFrames() {
   fetch("https://api.rainviewer.com/public/weather-maps.json").then(function (a) { return a.json(); }).then(function (d) {
     var host = d.host, radar = d.radar || {};
-    radarFrames = (radar.past || []).concat(radar.nowcast || []).map(function (f) { return { time: f.time, url: host + f.path }; });
+    var past = (radar.past || []).slice(-3);   // ~letzte 30 Min als Kontext
+    var nowcast = radar.nowcast || [];          // Vorhersage (kostenlos begrenzt)
+    radarFrames = past.concat(nowcast).map(function (f) { return { time: f.time, url: host + f.path }; });
     if (!radarFrames.length) { $("radar-zeit").textContent = "Kein Radar verfügbar."; return; }
     $("radar-schieber").max = radarFrames.length - 1;
-    radarIndex = Math.max(0, (radar.past || []).length - 1);
+    radarIndex = nowcast.length ? past.length : radarFrames.length - 1;  // Standard: erste Vorhersage
     $("radar-schieber").value = radarIndex;
+    var min = Math.round((radarFrames[radarFrames.length - 1].time - Date.now() / 1000) / 60);
+    if (min > 0) $("radar-note").textContent = "🗺️ Regen-Radar bis +" + min + " Min. Tippe auf die Karte, um deinen Ort zu setzen. Längere Regen-Aussicht: Reiter „Wetter“.";
     zeigeRadarFrame(radarIndex);
   }).catch(function () { $("radar-zeit").textContent = "Radar gerade nicht erreichbar."; });
 }
+function radarZeitLabel(unixSek) {
+  var min = Math.round((unixSek - Date.now() / 1000) / 60);
+  var d = new Date(unixSek * 1000);
+  var uhr = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+  if (min === 0) return "jetzt (" + uhr + ")";
+  return (min > 0 ? "in " + min + " Min" : "vor " + (-min) + " Min") + " (" + uhr + ")";
+}
 function zeigeRadarFrame(i) {
-  if (!radarFrames.length || !window.L || !radarKarte) return;
+  if (!radarFrames.length || !window.L || !wetterKarte) return;
   radarIndex = (i + radarFrames.length) % radarFrames.length;
   var f = radarFrames[radarIndex];
   var neu = L.tileLayer(f.url + "/256/{z}/{x}/{y}/4/1_1.png", { opacity: 0.7, maxZoom: 12, attribution: "Radar © RainViewer" });
-  neu.addTo(radarKarte);
+  neu.addTo(wetterKarte);
   var alt = radarLayer; radarLayer = neu;
-  if (alt) setTimeout(function () { radarKarte.removeLayer(alt); }, 250);
+  if (alt) setTimeout(function () { wetterKarte.removeLayer(alt); }, 250);
   $("radar-schieber").value = radarIndex;
-  var d = new Date(f.time * 1000);
-  $("radar-zeit").textContent = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + " Uhr";
+  $("radar-zeit").textContent = radarZeitLabel(f.time);
 }
 $("radar-schieber").addEventListener("input", function () { stopRadar(); zeigeRadarFrame(parseInt(this.value, 10)); });
 $("radar-play").addEventListener("click", function () { if (radarTimer) stopRadar(); else startRadar(); });
@@ -858,7 +834,7 @@ function zeichneNudge() {
 
 /* ---------- Start ---------- */
 $("push-schalter").checked = !!zustand.aktiviert;
-zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); aktualisiereVorschau();
+zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); aktualisiereVorschau(); initWetterkarte();
 if (!zustand.willkommenGesehen) zeigeWillkommen();
 </script>
 </body>
