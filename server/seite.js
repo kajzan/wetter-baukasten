@@ -287,7 +287,7 @@ var VORLAGEN = [
   { name:"Lauf-Wetter", emoji:"🏃", nurVonUhr:6, nurBisUhr:21, mindestdauerStunden:1, bedingungen:{ tempMin:5, tempMax:20, windMax:20, regenMax:0.2 } },
   { name:"Fahrrad-Wetter", emoji:"🚲", nurVonUhr:6, nurBisUhr:20, mindestdauerStunden:1, bedingungen:{ tempMin:8, tempMax:28, windMax:20, boeMax:35, regenMax:0.1 } },
   { name:"Sonnencreme", emoji:"🧴", nurVonUhr:9, nurBisUhr:18, mindestdauerStunden:2, bedingungen:{ uvMin:6 } },
-  { name:"Sturm-Warnung", emoji:"⛈️", nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1, bedingungen:{ windMin:60 } }
+  { name:"Sturm-Warnung", emoji:"⛈️", nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1, haeufigkeit:"stuendlich", bedingungen:{ windMin:60 } }
 ];
 
 var SPEICHER = "wetterWaechterApp_v2";
@@ -409,6 +409,7 @@ function zeichneVorlagen() {
     knopf.addEventListener("click", function () {
       zustand.regeln.push({ name:v.name, emoji:v.emoji, aktiv:true, zeitfensterStunden:48,
         nurVonUhr:v.nurVonUhr, nurBisUhr:v.nurBisUhr, mindestdauerStunden:v.mindestdauerStunden,
+        haeufigkeit:v.haeufigkeit || "taeglich",
         bedingungen:JSON.parse(JSON.stringify(v.bedingungen)) });
       speichere(); zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
     });
@@ -520,8 +521,18 @@ function feinEditor(regel, i) {
 
   var zf = document.createElement("div"); zf.className = "zeile";
   var optionen = FENSTER_OPTIONEN.map(function (o) { return '<option value="' + o[0] + '"' + ((regel.zeitfensterStunden || 48) === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
-  zf.innerHTML = '<div style="flex:2"><label>Vorschau-Fenster</label><select data-f="zeitfensterStunden">' + optionen + '</select></div>';
-  zf.querySelector("select").addEventListener("change", function () { regel.zeitfensterStunden = parseInt(this.value, 10); speichere(); aktualisiereVorschau(); syncWennAktiv(); });
+  var haeuf = regel.haeufigkeit || "taeglich";
+  zf.innerHTML = '<div style="flex:1"><label>Vorschau-Fenster</label><select data-f="zeitfensterStunden">' + optionen + '</select></div>'
+    + '<div style="flex:1"><label>Benachrichtigen</label><select data-f="haeufigkeit">'
+    + '<option value="taeglich"' + (haeuf === "taeglich" ? " selected" : "") + '>höchstens 1×/Tag</option>'
+    + '<option value="stuendlich"' + (haeuf === "stuendlich" ? " selected" : "") + '>stündlich, solange es zutrifft</option></select></div>';
+  Array.prototype.forEach.call(zf.querySelectorAll("select"), function (sel) {
+    sel.addEventListener("change", function () {
+      if (this.dataset.f === "zeitfensterStunden") { regel.zeitfensterStunden = parseInt(this.value, 10); aktualisiereVorschau(); }
+      else { regel.haeufigkeit = this.value; }
+      speichere(); syncWennAktiv();
+    });
+  });
   det.appendChild(zf);
 
   var zeit = document.createElement("div"); zeit.className = "zeile";
@@ -653,28 +664,28 @@ function baueTag(t, gross) {
   tag.appendChild(kopf); tag.appendChild(det);
   return tag;
 }
-/* Fadenkreuz beim Streichen über das Temperatur/Wind-Diagramm. */
+/* Fadenkreuz beim Streichen über das Diagramm; die Werte erscheinen in der
+   festen Legendenzeile darüber (läuft nie aus dem Bild). */
 function verdrahteInteraktion(container) {
   Array.prototype.forEach.call(container.querySelectorAll(".dia-box"), function (box) {
     var svg = box.querySelector(".tw-svg"); if (!svg) return;
-    var xline = box.querySelector(".xline"), xtip = box.querySelector(".xtip");
+    var xline = box.querySelector(".xline");
+    var legendeEl = box.parentNode.querySelector(".tw-legende");
+    var standard = legendeEl ? legendeEl.innerHTML : "";
     var W = +svg.dataset.w, l = +svg.dataset.l, r = +svg.dataset.r, n = +svg.dataset.n, datum = box.dataset.datum;
     function bei(clientX) {
       var rect = svg.getBoundingClientRect(); if (!rect.width) return;
       var svgX = (clientX - rect.left) / rect.width * W, step = (W - l - r) / (n - 1);
       var i = Math.round((svgX - l) / step); if (i < 0) i = 0; if (i > n - 1) i = n - 1;
-      var xpx = (l + i * step) / W * rect.width;
-      xline.style.left = xpx + "px"; xline.style.display = "block";
-      var d = tagCache[datum]; if (!d) return;
-      xtip.innerHTML = '<b>' + d.std[i] + ' Uhr</b> · 🌡️' + Math.round(d.temp[i]) + '° · 💨' + Math.round(d.wind[i])
+      xline.style.left = ((l + i * step) / W * rect.width) + "px"; xline.style.display = "block";
+      var d = tagCache[datum]; if (!d || !legendeEl) return;
+      legendeEl.innerHTML = '<b>' + d.std[i] + ' Uhr</b> · 🌡️' + Math.round(d.temp[i]) + '° · 💨' + Math.round(d.wind[i])
         + (d.boen ? ' 🌬️' + Math.round(d.boen[i]) : "") + (d.dir ? ' ' + d.dir[i] : "")
         + ' · 🌧️' + (Math.round(d.regen[i] * 10) / 10) + (d.uv ? ' · UV' + Math.round(d.uv[i]) : "");
-      xtip.style.display = "block";
-      xtip.style.left = Math.max(46, Math.min(rect.width - 46, xpx)) + "px";
     }
     box.addEventListener("pointermove", function (e) { bei(e.clientX); });
     box.addEventListener("pointerdown", function (e) { bei(e.clientX); });
-    box.addEventListener("pointerleave", function () { xline.style.display = "none"; xtip.style.display = "none"; });
+    box.addEventListener("pointerleave", function () { xline.style.display = "none"; if (legendeEl) legendeEl.innerHTML = standard; });
   });
 }
 function tagIcon(datum) {
@@ -719,7 +730,7 @@ function detailHtml(datum, gross) {
     if (jh >= 0 && jh <= std.length - 1) jetztIndex = jh;
   }
   return '<div class="stundenreihe">' + stunden.join("") + '</div>'
-    + tempWindDiagramm(std, temp, wind, boen, jetztIndex, gross, datum)
+    + tempWindDiagramm(std, temp, wind, boen, uvArr, jetztIndex, gross, datum)
     + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb", jetztIndex, gross);
 }
 /* Dezente senkrechte Linie an der aktuellen Uhrzeit. */
@@ -729,31 +740,40 @@ function jetztLinie(jetztIndex, px, o, H, u) {
   return '<line class="jetzt-linie" x1="' + x + '" y1="' + o + '" x2="' + x + '" y2="' + (H - u) + '" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2" opacity=".4"/>'
     + '<text x="' + x + '" y="' + (o + 6) + '" font-size="8" fill="currentColor" text-anchor="middle" opacity=".6">jetzt</text>';
 }
-/* Doppelachsen-Diagramm: Temperatur (links, rot) + Wind/Böen (rechts, türkis).
-   Interaktiv (Fadenkreuz) über die umgebende .dia-box; gross = größere Höhe. */
-function tempWindDiagramm(std, temp, wind, boen, jetztIndex, gross, datum) {
+/* Doppelachsen-Diagramm: Temperatur (rot) + Wind/Böen (türkis) + UV (Fläche).
+   Dezente halbtransparente Flächen unter den Linien; interaktiv über die .dia-box. */
+function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum) {
   var n = temp.length; if (!n) return "";
   var W = 320, H = gross ? 150 : 100, l = 26, r = 30, o = 12, u = 20;
   var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
   var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
+  var uvMax = uv ? Math.max.apply(null, uv) : 0; if (uvMax <= 0) uvMax = 1;
   var px = function (i) { return l + i * (W - l - r) / (n - 1); };
   var yT = function (v) { return o + (1 - (v - tmin) / (tmax - tmin)) * (H - o - u); };
   var yW = function (v) { return o + (1 - v / wmax) * (H - o - u); };
-  var tempFarbe = "#e11d48", windFarbe = "#0891b2";
-  var linie = function (werte, f, mapy, extra) { return '<polyline fill="none" stroke="' + f + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ' + (extra || "") + ' points="'
+  var yU = function (v) { return o + (1 - v / uvMax) * (H - o - u); };
+  var tempFarbe = "#e11d48", windFarbe = "#0891b2", uvFarbe = "#f59e0b";
+  var sw = gross ? 3 : 2.4, basis = (H - u).toFixed(1);
+  var linie = function (werte, f, mapy, extra) { return '<polyline fill="none" stroke="' + f + '" stroke-width="' + sw + '" stroke-linejoin="round" stroke-linecap="round" ' + (extra || "") + ' points="'
     + werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ") + '"/>'; };
-  var svg = '<svg class="tw-svg" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur und Wind">'
+  var flaeche = function (werte, f, mapy, op) { var pts = werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ");
+    return '<polygon fill="' + f + '" opacity="' + op + '" stroke="none" points="' + px(0).toFixed(1) + "," + basis + " " + pts + " " + px(n - 1).toFixed(1) + "," + basis + '"/>'; };
+  var svg = '<svg class="tw-svg" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur, Wind und UV">'
     + '<text x="2" y="' + (yT(tmax) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmax) + '°</text>'
     + '<text x="2" y="' + (yT(tmin) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmin) + '°</text>'
     + '<text x="' + (W - 2) + '" y="' + (yW(wmax) + 6).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">' + Math.round(wmax) + '</text>'
     + '<text x="' + (W - 2) + '" y="' + (yW(0) - 1).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">0</text>'
     + jetztLinie(jetztIndex, px, o, H, u)
-    + (boen ? linie(boen, windFarbe, yW, 'stroke-dasharray="3 3" opacity=".5"') : "")
+    + (uv ? flaeche(uv, uvFarbe, yU, ".16") : "")
+    + flaeche(wind, windFarbe, yW, ".12")
+    + flaeche(temp, tempFarbe, yT, ".12")
+    + (boen ? linie(boen, windFarbe, yW, 'stroke-dasharray="3 3" opacity=".55"') : "")
     + linie(wind, windFarbe, yW) + linie(temp, tempFarbe, yT)
     + xBeschriftung(std).map(function (p) { return '<text x="' + px(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("")
     + '</svg>';
-  return '<div class="diagramm"><div class="titel"><span><b style="color:' + tempFarbe + '">Temperatur °C</b> · <b style="color:' + windFarbe + '">Wind km/h</b>' + (boen ? " · Böen (gestrichelt)" : "") + '</span></div>'
-    + '<div class="dia-box" data-datum="' + datum + '">' + svg + '<div class="xline"></div><div class="xtip"></div></div></div>';
+  var legende = '<b style="color:' + tempFarbe + '">Temperatur °C</b> · <b style="color:' + windFarbe + '">Wind km/h</b>' + (boen ? " · Böen" : "") + (uv ? ' · <b style="color:' + uvFarbe + '">UV</b>' : "");
+  return '<div class="diagramm"><div class="titel"><span class="tw-legende">' + legende + '</span></div>'
+    + '<div class="dia-box" data-datum="' + datum + '">' + svg + '<div class="xline"></div></div></div>';
 }
 function xBeschriftung(std) {
   var t = [];

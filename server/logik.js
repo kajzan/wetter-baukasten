@@ -201,6 +201,7 @@ export function normalisiereRegeln(regeln) {
     return {
       name, emoji,
       aktiv: r?.aktiv !== false,
+      haeufigkeit: r?.haeufigkeit === "stuendlich" ? "stuendlich" : "taeglich",
       zeitfensterStunden: Math.round(zahl(r?.zeitfensterStunden, 1, 168, 48)),
       nurVonUhr: Math.round(zahl(r?.nurVonUhr, 0, 23, 0)),
       nurBisUhr: Math.round(zahl(r?.nurBisUhr, 1, 24, 24)),

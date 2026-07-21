@@ -285,25 +285,34 @@ export default {
 
       for (const nutzer of nutzerliste) {
         const kennung = nutzer._schluessel.slice("nutzer:".length);
+        const stundenBucket = new Date().toISOString().slice(0, 13); // z. B. "2026-07-21T18"
+        let abgemeldet = false;
         for (const regel of nutzer.regeln ?? []) {
+          if (abgemeldet) break;
           if (!regel.aktiv) continue;
           const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
-          for (const datum of Object.keys(gefunden).sort()) {
-            const merker = "gesendet:" + kennung + ":" + regel.name + ":" + datum;
-            if (await env.SPEICHER.get(merker)) continue;   // schon gemeldet
+          const tage = Object.keys(gefunden).sort();
+          if (!tage.length) continue;
+          // "stuendlich": nur der nächste Treffer, dafür jede Stunde erneut;
+          // "taeglich" (Standard): jeder Tag höchstens einmal.
+          const stuendlich = (regel.haeufigkeit || "taeglich") === "stuendlich";
+          const ziele = stuendlich ? [tage[0]] : tage;
+          for (const datum of ziele) {
+            const merker = stuendlich
+              ? "gesendet:" + kennung + ":" + regel.name + ":H:" + stundenBucket
+              : "gesendet:" + kennung + ":" + regel.name + ":" + datum;
+            if (await env.SPEICHER.get(merker)) continue;   // in diesem Zeitraum schon gemeldet
             try {
               const antwort = await sendeNachricht(nutzer.abo,
                 (regel.emoji || "🔔") + " " + regel.name,
                 blockZuText(datum, gefunden[datum]), env);
               if (antwort.status === 404 || antwort.status === 410) {
-                // Abo existiert nicht mehr (App gelöscht o. ä.) -> austragen
-                await env.SPEICHER.delete(nutzer._schluessel);
-                fehler++;
-                break;
+                await env.SPEICHER.delete(nutzer._schluessel);  // Abo weg -> austragen
+                fehler++; abgemeldet = true; break;
               }
               if (antwort.ok || antwort.status === 201) {
                 pushs++;
-                await env.SPEICHER.put(merker, "1", { expirationTtl: GESENDET_ABLAUF_SEK });
+                await env.SPEICHER.put(merker, "1", { expirationTtl: stuendlich ? 2 * 3600 : GESENDET_ABLAUF_SEK });
               } else { fehler++; }
             } catch { fehler++; }
           }
