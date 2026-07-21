@@ -145,6 +145,12 @@ export function appSeite(vapidPublic) {
   .diagramm { margin-top:12px; }
   .diagramm .titel { font-size:.8rem; color:var(--text2); margin-bottom:2px; display:flex; justify-content:space-between; }
   .diagramm svg { width:100%; height:auto; display:block; }
+  .dia-box { position:relative; touch-action:none; }
+  .dia-box .xline { position:absolute; top:0; bottom:0; width:1px; background:var(--text); opacity:.4; display:none; pointer-events:none; }
+  .dia-box .xtip { position:absolute; top:0; transform:translateX(-50%); background:var(--karte); border:1px solid var(--linie);
+    border-radius:8px; padding:3px 7px; font-size:.72rem; white-space:nowrap; display:none; pointer-events:none; box-shadow:0 1px 5px rgba(0,0,0,.18); z-index:2; }
+  .tag.gross { border-color:var(--akzent); border-width:2px; }
+  .tag.gross .tag-kopf .wt { font-size:1.05rem; }
 
   /* Modal */
   .modal-hg { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:30; display:flex;
@@ -162,9 +168,6 @@ export function appSeite(vapidPublic) {
 </head>
 <body>
 <main>
-  <h1>🌦️ Wetter-Wächter</h1>
-  <p class="untertitel">Sag mir, welches Wetter du suchst – ich melde mich, wenn es kommt.</p>
-
   <!-- ===== Wünsche ===== -->
   <section id="reiter-wuensche" class="reiter sichtbar">
     <div id="nudge"></div>
@@ -227,7 +230,19 @@ export function appSeite(vapidPublic) {
       <p class="hinweis">Alles im Browser Gespeicherte löschen und dieses Gerät vom Wächter abmelden.</p>
       <button class="knopf rot" id="loeschen" style="padding:9px 13px;font-size:.85rem">Alles löschen</button>
     </section>
-    <p class="hinweis" style="text-align:center">Kostenlos · Wetterdaten: Open-Meteo · Karte: OpenStreetMap · Nachrichten ohne Ortsangaben</p>
+    <section class="karte">
+      <details><summary style="cursor:pointer;font-weight:700;font-size:1.02rem">ℹ️ Was diese App kann</summary>
+        <ul style="font-size:.88rem;padding-left:20px;margin:10px 0 0">
+          <li>Ort per Suche, 📍-Standort oder Karte wählen (nur gerundet, ~11 km)</li>
+          <li>Wetter-Wünsche aus Vorlagen antippen oder eigene Regeln bauen</li>
+          <li>Bedingungen: Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte, UV</li>
+          <li>Einstellbares Zeitfenster (1–7 Tage), Uhrzeit-Fenster und Mindestdauer</li>
+          <li>7-Tage-Vorhersage mit Stundenwerten und Diagrammen</li>
+          <li>Push-Benachrichtigung, sobald ein Wunsch zutrifft (stündliche Prüfung)</li>
+        </ul>
+        <p class="hinweis" style="margin:8px 0 0">Kostenlos · Wetterdaten: Open-Meteo · Karte: OpenStreetMap · Nachrichten ohne Ortsangaben · nur gerundeter Ort.</p>
+      </details>
+    </section>
   </section>
 </main>
 
@@ -571,6 +586,14 @@ function feinEditor(regel, i) {
 /* ---------- Vorschau + Wetter ---------- */
 var vorschauTimer = null;
 function aktualisiereVorschauLangsam() { clearTimeout(vorschauTimer); vorschauTimer = setTimeout(aktualisiereVorschau, 700); }
+function wetterCacheKey() { return zustand.ort ? "wwCache_" + zustand.ort.lat + "," + zustand.ort.lon : null; }
+function anwendeVorschau(d) {
+  letzteTreffer = d.treffer; letzteTage = d.tage || []; letzteStunden = d.stunden || null;
+  Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
+    var i = parseInt(ziel.dataset.regel, 10); ziel.innerHTML = trefferHtml(i, zustand.regeln[i]);
+  });
+  zeichneWetter();
+}
 function aktualisiereVorschau() {
   clearTimeout(vorschauTimer);
   if (!zustand.ort) { $("wetter-hinweis").style.display = ""; $("wetter-tage").innerHTML = ""; return; }
@@ -578,35 +601,80 @@ function aktualisiereVorschau() {
     body:JSON.stringify({ lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln }) })
   .then(function (a) { return a.json(); }).then(function (d) {
     if (!d || !d.ok) throw new Error((d && d.fehler) || "unbekannt");
-    letzteTreffer = d.treffer; letzteTage = d.tage || []; letzteStunden = d.stunden || null;
-    Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
-      var i = parseInt(ziel.dataset.regel, 10); ziel.innerHTML = trefferHtml(i, zustand.regeln[i]);
-    });
-    zeichneWetter();
+    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, tage: d.tage, stunden: d.stunden })); } catch (e) {}
+    anwendeVorschau(d);
   }).catch(function (f) {
-    Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
-      ziel.innerHTML = '<div class="warnung">Vorschau gerade nicht möglich (' + sicher(f.message) + ').</div>';
-    });
-    $("wetter-hinweis").textContent = "Wetterdaten gerade nicht verfügbar."; $("wetter-hinweis").style.display = "";
+    // Bei Fehler die zuletzt gespeicherte Vorschau zeigen (macht die App unabhängiger)
+    var roh = null; try { roh = localStorage.getItem(wetterCacheKey()); } catch (e) {}
+    if (roh) {
+      var c = JSON.parse(roh);
+      anwendeVorschau(c);
+      $("wetter-hinweis").textContent = "Stand: vor " + Math.round((Date.now() - c.zeit) / 60000) + " Min (zwischengespeichert – Wetterdienst gerade nicht erreichbar).";
+      $("wetter-hinweis").style.display = "";
+    } else {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
+        ziel.innerHTML = '<div class="warnung">Vorschau gerade nicht möglich (' + sicher(f.message) + ').</div>';
+      });
+      $("wetter-hinweis").textContent = "Wetterdaten gerade nicht verfügbar."; $("wetter-hinweis").style.display = "";
+    }
   });
 }
+var tagCache = {};
+function heuteIsoLokal() { var h = new Date(); return h.getFullYear() + "-" + ("0" + (h.getMonth() + 1)).slice(-2) + "-" + ("0" + h.getDate()).slice(-2); }
 function zeichneWetter() {
   $("wetter-hinweis").style.display = letzteTage.length ? "none" : "";
   var ziel = $("wetter-tage"); ziel.innerHTML = "";
-  letzteTage.forEach(function (t) {
-    var tag = document.createElement("div"); tag.className = "tag" + (offeneTage[t.datum] ? " offen" : "");
-    var kopf = document.createElement("div"); kopf.className = "tag-kopf";
-    kopf.innerHTML = '<span class="wt">' + t.wochentag.slice(0,2) + ", " + t.datum.slice(8,10) + "." + t.datum.slice(5,7) + '.</span>'
-      + '<span class="icon">' + tagIcon(t.datum) + '</span>'
-      + '<span class="werte">' + t.tempMin + "–" + t.tempMax + " °C · 💨 " + t.windMax
-      + (t.boeMax != null ? " 🌬️" + t.boeMax : "") + (t.windRichtung ? " " + t.windRichtung : "")
-      + (t.uvMax != null ? " · UV " + t.uvMax : "") + '</span><span class="pfeil">▸</span>';
-    kopf.addEventListener("click", function () { offeneTage[t.datum] = !offeneTage[t.datum]; tag.classList.toggle("offen");
-      if (offeneTage[t.datum] && !det.dataset.gefuellt) { det.innerHTML = detailHtml(t.datum); det.dataset.gefuellt = "1"; } });
-    tag.appendChild(kopf);
-    var det = document.createElement("div"); det.className = "details";
-    if (offeneTage[t.datum]) { det.innerHTML = detailHtml(t.datum); det.dataset.gefuellt = "1"; }
-    tag.appendChild(det); ziel.appendChild(tag);
+  var heute = heuteIsoLokal(), heuteTag = null, rest = [];
+  letzteTage.forEach(function (t) { if (t.datum === heute && !heuteTag) heuteTag = t; else rest.push(t); });
+  if (heuteTag) ziel.appendChild(baueTag(heuteTag, true));   // heute groß & offen ganz oben
+  rest.forEach(function (t) { ziel.appendChild(baueTag(t, false)); });
+}
+function baueTag(t, gross) {
+  var tag = document.createElement("div");
+  var offen = gross || offeneTage[t.datum];
+  tag.className = "tag" + (gross ? " gross" : "") + (offen ? " offen" : "");
+  var label = gross ? "Heute" : (t.wochentag.slice(0, 2) + ", " + t.datum.slice(8, 10) + "." + t.datum.slice(5, 7) + ".");
+  var kopf = document.createElement("div"); kopf.className = "tag-kopf";
+  kopf.innerHTML = '<span class="wt">' + label + '</span>'
+    + '<span class="icon">' + tagIcon(t.datum) + '</span>'
+    + '<span class="werte">' + t.tempMin + "–" + t.tempMax + " °C · 💨 " + t.windMax
+    + (t.boeMax != null ? " 🌬️" + t.boeMax : "") + (t.windRichtung ? " " + t.windRichtung : "")
+    + (t.uvMax != null ? " · UV " + t.uvMax : "") + '</span>'
+    + (gross ? "" : '<span class="pfeil">▸</span>');
+  var det = document.createElement("div"); det.className = "details";
+  function fuelle() { det.innerHTML = detailHtml(t.datum, gross); det.dataset.gefuellt = "1"; verdrahteInteraktion(det); }
+  if (offen) fuelle();
+  if (!gross) {
+    kopf.addEventListener("click", function () {
+      offeneTage[t.datum] = !offeneTage[t.datum]; tag.classList.toggle("offen");
+      if (offeneTage[t.datum] && !det.dataset.gefuellt) fuelle();
+    });
+  }
+  tag.appendChild(kopf); tag.appendChild(det);
+  return tag;
+}
+/* Fadenkreuz beim Streichen über das Temperatur/Wind-Diagramm. */
+function verdrahteInteraktion(container) {
+  Array.prototype.forEach.call(container.querySelectorAll(".dia-box"), function (box) {
+    var svg = box.querySelector(".tw-svg"); if (!svg) return;
+    var xline = box.querySelector(".xline"), xtip = box.querySelector(".xtip");
+    var W = +svg.dataset.w, l = +svg.dataset.l, r = +svg.dataset.r, n = +svg.dataset.n, datum = box.dataset.datum;
+    function bei(clientX) {
+      var rect = svg.getBoundingClientRect(); if (!rect.width) return;
+      var svgX = (clientX - rect.left) / rect.width * W, step = (W - l - r) / (n - 1);
+      var i = Math.round((svgX - l) / step); if (i < 0) i = 0; if (i > n - 1) i = n - 1;
+      var xpx = (l + i * step) / W * rect.width;
+      xline.style.left = xpx + "px"; xline.style.display = "block";
+      var d = tagCache[datum]; if (!d) return;
+      xtip.innerHTML = '<b>' + d.std[i] + ' Uhr</b> · 🌡️' + Math.round(d.temp[i]) + '° · 💨' + Math.round(d.wind[i])
+        + (d.boen ? ' 🌬️' + Math.round(d.boen[i]) : "") + (d.dir ? ' ' + d.dir[i] : "")
+        + ' · 🌧️' + (Math.round(d.regen[i] * 10) / 10) + (d.uv ? ' · UV' + Math.round(d.uv[i]) : "");
+      xtip.style.display = "block";
+      xtip.style.left = Math.max(46, Math.min(rect.width - 46, xpx)) + "px";
+    }
+    box.addEventListener("pointermove", function (e) { bei(e.clientX); });
+    box.addEventListener("pointerdown", function (e) { bei(e.clientX); });
+    box.addEventListener("pointerleave", function () { xline.style.display = "none"; xtip.style.display = "none"; });
   });
 }
 function tagIcon(datum) {
@@ -621,7 +689,7 @@ function tagIndizes(datum) {
   for (var i = 0; i < letzteStunden.time.length; i++) if (letzteStunden.time[i].slice(0,10) === datum) idx.push(i);
   return idx;
 }
-function detailHtml(datum) {
+function detailHtml(datum, gross) {
   var idx = tagIndizes(datum); if (!idx.length) return "";
   var s = letzteStunden, stunden = [];
   idx.forEach(function (i) {
@@ -641,17 +709,18 @@ function detailHtml(datum) {
   var wind = idx.map(function (i) { return s.wind_speed_10m[i]; });
   var boen = s.wind_gusts_10m ? idx.map(function (i) { return s.wind_gusts_10m[i]; }) : null;
   var regen = idx.map(function (i) { return s.precipitation[i]; });
+  var dirNamen = s.wind_direction_10m ? idx.map(function (i) { return SEKTOREN[Math.round(s.wind_direction_10m[i] / 45) % 8]; }) : null;
+  var uvArr = s.uv_index ? idx.map(function (i) { return s.uv_index[i]; }) : null;
+  tagCache[datum] = { std: std, temp: temp, wind: wind, boen: boen, regen: regen, dir: dirNamen, uv: uvArr };
   // Position der aktuellen Uhrzeit (nur wenn der Tag heute ist)
-  var heute = new Date();
-  var heuteIso = heute.getFullYear() + "-" + ("0" + (heute.getMonth() + 1)).slice(-2) + "-" + ("0" + heute.getDate()).slice(-2);
-  var jetztIndex = null;
-  if (datum === heuteIso && std.length) {
+  var heute = new Date(), jetztIndex = null;
+  if (datum === heuteIsoLokal() && std.length) {
     var jh = heute.getHours() + heute.getMinutes() / 60 - std[0];
     if (jh >= 0 && jh <= std.length - 1) jetztIndex = jh;
   }
   return '<div class="stundenreihe">' + stunden.join("") + '</div>'
-    + tempWindDiagramm(std, temp, wind, boen, jetztIndex)
-    + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb", jetztIndex);
+    + tempWindDiagramm(std, temp, wind, boen, jetztIndex, gross, datum)
+    + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb", jetztIndex, gross);
 }
 /* Dezente senkrechte Linie an der aktuellen Uhrzeit. */
 function jetztLinie(jetztIndex, px, o, H, u) {
@@ -660,10 +729,11 @@ function jetztLinie(jetztIndex, px, o, H, u) {
   return '<line class="jetzt-linie" x1="' + x + '" y1="' + o + '" x2="' + x + '" y2="' + (H - u) + '" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2" opacity=".4"/>'
     + '<text x="' + x + '" y="' + (o + 6) + '" font-size="8" fill="currentColor" text-anchor="middle" opacity=".6">jetzt</text>';
 }
-/* Doppelachsen-Diagramm: Temperatur (links, rot) + Wind/Böen (rechts, türkis). */
-function tempWindDiagramm(std, temp, wind, boen, jetztIndex) {
+/* Doppelachsen-Diagramm: Temperatur (links, rot) + Wind/Böen (rechts, türkis).
+   Interaktiv (Fadenkreuz) über die umgebende .dia-box; gross = größere Höhe. */
+function tempWindDiagramm(std, temp, wind, boen, jetztIndex, gross, datum) {
   var n = temp.length; if (!n) return "";
-  var W = 320, H = 100, l = 26, r = 30, o = 12, u = 20;
+  var W = 320, H = gross ? 150 : 100, l = 26, r = 30, o = 12, u = 20;
   var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
   var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
   var px = function (i) { return l + i * (W - l - r) / (n - 1); };
@@ -672,7 +742,7 @@ function tempWindDiagramm(std, temp, wind, boen, jetztIndex) {
   var tempFarbe = "#e11d48", windFarbe = "#0891b2";
   var linie = function (werte, f, mapy, extra) { return '<polyline fill="none" stroke="' + f + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ' + (extra || "") + ' points="'
     + werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ") + '"/>'; };
-  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur und Wind">'
+  var svg = '<svg class="tw-svg" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur und Wind">'
     + '<text x="2" y="' + (yT(tmax) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmax) + '°</text>'
     + '<text x="2" y="' + (yT(tmin) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmin) + '°</text>'
     + '<text x="' + (W - 2) + '" y="' + (yW(wmax) + 6).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">' + Math.round(wmax) + '</text>'
@@ -682,7 +752,8 @@ function tempWindDiagramm(std, temp, wind, boen, jetztIndex) {
     + linie(wind, windFarbe, yW) + linie(temp, tempFarbe, yT)
     + xBeschriftung(std).map(function (p) { return '<text x="' + px(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("")
     + '</svg>';
-  return '<div class="diagramm"><div class="titel"><span><b style="color:' + tempFarbe + '">Temperatur °C</b> · <b style="color:' + windFarbe + '">Wind km/h</b>' + (boen ? " · Böen (gestrichelt)" : "") + '</span></div>' + svg + '</div>';
+  return '<div class="diagramm"><div class="titel"><span><b style="color:' + tempFarbe + '">Temperatur °C</b> · <b style="color:' + windFarbe + '">Wind km/h</b>' + (boen ? " · Böen (gestrichelt)" : "") + '</span></div>'
+    + '<div class="dia-box" data-datum="' + datum + '">' + svg + '<div class="xline"></div><div class="xtip"></div></div></div>';
 }
 function xBeschriftung(std) {
   var t = [];
@@ -703,10 +774,10 @@ function linienDiagramm(titel, einheit, std, werte, farbe) {
     + '<polyline fill="none" stroke="' + farbe + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + punkte + '"/>'
     + ticks + '</svg></div>';
 }
-function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex) {
+function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex, gross) {
   var n = werte.length; if (!n) return "";
   var max = Math.max.apply(null, werte); if (max <= 0) max = 1;
-  var W = 320, H = 78, l = 6, r = 6, o = 10, u = 20;
+  var W = 320, H = gross ? 100 : 78, l = 6, r = 6, o = 10, u = 20;
   var bw = (W - l - r) / n;
   var pxBar = function (idx) { return l + (idx + 0.5) * bw; };
   var summe = Math.round(werte.reduce(function (a, b) { return a + b; }, 0) * 10) / 10;
@@ -742,7 +813,7 @@ function benachrichtigungAn() {
   }).then(function (abo) {
     zustand.aktiviert = true; zustand.nudgeWeg = true; speichere(); zeichneNudge();
     var bereit = zustand.ort && zustand.regeln.some(function (r) { return r.aktiv; });
-    if (bereit) { return sendeAnDienst(abo).then(function (d) {
+    if (bereit) { return sendeAnDienst(abo, true).then(function (d) {
       zeigePushStatus(d.gespeichert ? "✅ Aktiv! Eine Bestätigung ist unterwegs. Der Wächter prüft ab jetzt stündlich."
         : "✅ Test-Nachricht unterwegs! (Speicher wird noch eingerichtet.)", "erfolg"); }); }
     zeigePushStatus("✅ Eingeschaltet. Sobald du einen Ort und einen aktiven Wunsch hast, wache ich für dich.", "erfolg");
@@ -759,9 +830,9 @@ function benachrichtigungAus() {
   }
 }
 $("push-schalter").addEventListener("change", function () { if (this.checked) benachrichtigungAn(); else benachrichtigungAus(); });
-function sendeAnDienst(abo) {
+function sendeAnDienst(abo, bestaetigen) {
   return fetch("/api/aktivieren", { method:"POST", headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({ abo:abo.toJSON ? abo.toJSON() : abo, lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln }) })
+    body:JSON.stringify({ abo:abo.toJSON ? abo.toJSON() : abo, lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln, bestaetigen: !!bestaetigen }) })
     .then(function (a) { return a.json().then(function (d) { if (!a.ok || !d.ok) throw new Error((d && d.fehler) || "Dienst nicht erreichbar."); return d; }); });
 }
 var syncTimer = null;
@@ -770,7 +841,7 @@ function syncWennAktiv() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(function () {
     navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); })
-      .then(function (abo) { if (abo) return sendeAnDienst(abo); }).catch(function () {});
+      .then(function (abo) { if (abo) return sendeAnDienst(abo, false); }).catch(function () {});
   }, 1200);
 }
 $("loeschen").addEventListener("click", function () {

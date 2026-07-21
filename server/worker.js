@@ -77,6 +77,34 @@ async function sendeNachricht(abo, titel, text, env) {
   return sendeWebPush(abo, inhalt, VAPID_PUBLIC, env.VAPID_PRIVATE, VAPID_SUBJECT);
 }
 
+/* Wetterabruf mit einem zweiten Versuch (fängt kurze Aussetzer wie 503 ab). */
+async function holeVorhersageMitRetry(lat, lon) {
+  try { return await holeVorhersage(lat, lon); }
+  catch (f) {
+    await new Promise((r) => setTimeout(r, 600));
+    return holeVorhersage(lat, lon);
+  }
+}
+
+/* Wetterabruf mit kurzem KV-Zwischenspeicher (20 Min). Bei einem Fehler wird –
+   falls vorhanden – die zuletzt gespeicherte Vorhersage zurückgegeben, damit ein
+   kurzer Open-Meteo-Aussetzer die App nicht lahmlegt. Ausserdem teilen sich viele
+   Nutzer mit demselben groben Ort denselben Cache (schont das Gratis-Kontingent). */
+async function holeVorhersageGecacht(lat, lon, env) {
+  const schluessel = "wetter:" + lat + "," + lon;
+  let cache = null;
+  if (env.SPEICHER) { try { cache = await env.SPEICHER.get(schluessel, { type: "json" }); } catch { /* egal */ } }
+  if (cache && (Date.now() - cache.zeit) < 20 * 60 * 1000) return cache.daten;
+  try {
+    const daten = await holeVorhersageMitRetry(lat, lon);
+    if (env.SPEICHER) { try { await env.SPEICHER.put(schluessel, JSON.stringify({ zeit: Date.now(), daten }), { expirationTtl: 3600 }); } catch { /* egal */ } }
+    return daten;
+  } catch (f) {
+    if (cache) return cache.daten;   // Notfalls veraltete Daten statt Fehler
+    throw f;
+  }
+}
+
 const SERVICE_WORKER = `
 self.addEventListener("push", (event) => {
   let daten = { title: "Wetter-Wächter", body: "" };
@@ -141,7 +169,7 @@ export default {
       let regeln;
       try { regeln = normalisiereRegeln(daten.regeln); } catch (f) { return jsonAntwort({ ok: false, fehler: f.message }, 400); }
       try {
-        const vorhersage = await holeVorhersage(lat, lon);
+        const vorhersage = await holeVorhersageGecacht(lat, lon, env);
         const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
         const treffer = regeln.map((regel) => {
           if (!regel.aktiv) return [];
@@ -188,18 +216,21 @@ export default {
         gespeichert = true;
       }
 
-      // Bestätigung nur beim ersten Mal bzw. bei fehlendem Speicher als Test
-      try {
-        const text = gespeichert
-          ? "Alles eingerichtet! Ich prüfe ab jetzt stündlich, ob dein Wunsch-Wetter kommt."
-          : "Der Push-Weg funktioniert! (Die stündliche Überwachung startet, sobald der Speicher eingerichtet ist.)";
-        const antwort = await sendeNachricht(daten.abo, "🔔 Wetter-Wächter", text, env);
-        if (!antwort.ok && antwort.status !== 201) {
-          let grund = ""; try { grund = (await antwort.text()).slice(0, 200); } catch { /* egal */ }
-          return jsonAntwort({ ok: false, gespeichert, fehler: "Push-Dienst Status " + antwort.status + (grund ? " – " + grund : "") }, 502);
+      // Bestätigungs-Push NUR beim ausdrücklichen Einschalten (bestaetigen=true),
+      // nicht bei jeder Regel-Änderung – sonst kommen bei jedem Schieberegler Pushs.
+      if (daten.bestaetigen) {
+        try {
+          const text = gespeichert
+            ? "Alles eingerichtet! Ich prüfe ab jetzt stündlich, ob dein Wunsch-Wetter kommt."
+            : "Der Push-Weg funktioniert! (Die stündliche Überwachung startet, sobald der Speicher eingerichtet ist.)";
+          const antwort = await sendeNachricht(daten.abo, "🔔 Wetter-Wächter", text, env);
+          if (!antwort.ok && antwort.status !== 201) {
+            let grund = ""; try { grund = (await antwort.text()).slice(0, 200); } catch { /* egal */ }
+            return jsonAntwort({ ok: false, gespeichert, fehler: "Push-Dienst Status " + antwort.status + (grund ? " – " + grund : "") }, 502);
+          }
+        } catch (f) {
+          return jsonAntwort({ ok: false, gespeichert, fehler: "Senden fehlgeschlagen: " + f.message }, 502);
         }
-      } catch (f) {
-        return jsonAntwort({ ok: false, gespeichert, fehler: "Senden fehlgeschlagen: " + f.message }, 502);
       }
       return jsonAntwort({ ok: true, gespeichert });
     }
@@ -245,7 +276,7 @@ export default {
       let vorhersage;
       try {
         const [lat, lon] = ort.split(",").map(Number);
-        vorhersage = await holeVorhersage(lat, lon);
+        vorhersage = await holeVorhersageGecacht(lat, lon, env);
       } catch (f) {
         console.log("Zeitplan: Wetter für", ort, "nicht verfügbar:", f.message);
         continue;
