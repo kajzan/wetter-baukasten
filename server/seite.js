@@ -25,20 +25,34 @@ export function appSeite(vapidPublic) {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <title>Wetter-Wächter</title>
 <style>
-  :root {
+  :root, :root[data-theme="light"] {
     --hg:#f4f6f8; --karte:#ffffff; --text:#1c2733; --text2:#5b6b7b;
     --linie:#dde4ea; --akzent:#2563eb; --akzent-hell:#e8effd;
     --gruen:#15803d; --gruen-hell:#e6f4ea; --rot:#b91c1c; --rot-hell:#fdeaea;
+    --glas:rgba(255,255,255,.45); --glas-linie:rgba(255,255,255,.6);
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :root { --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
             --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
-            --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616; }
+            --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
+            --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16); }
   }
+  :root[data-theme="dark"] {
+    --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
+    --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
+    --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
+    --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
+  }
+  /* Himmel-Hintergrund + Glas-Karten auf der Wetter-Seite */
+  #himmel { position:fixed; inset:0; z-index:-1; background:var(--hg); transition:background .8s ease; }
+  body.wetter-modus #reiter-wetter > .karte { background:transparent; border:none; padding:0; }
+  body.wetter-modus #reiter-wetter .tag { background:var(--glas); border-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(9px); backdrop-filter:blur(9px); }
+  body.wetter-modus #reiter-wetter h2, body.wetter-modus #reiter-wetter .hinweis { text-shadow:0 1px 2px rgba(0,0,0,.08); }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-         background:var(--hg); color:var(--text); line-height:1.5; -webkit-text-size-adjust:100%; }
+         background:transparent; color:var(--text); line-height:1.5; -webkit-text-size-adjust:100%; }
   main { max-width:640px; margin:0 auto; padding:14px 12px calc(78px + env(safe-area-inset-bottom)); }
   h1 { font-size:1.3rem; margin:6px 2px 2px; }
   h2 { font-size:1.02rem; margin:0 0 10px; }
@@ -167,6 +181,7 @@ export function appSeite(vapidPublic) {
 </style>
 </head>
 <body>
+<div id="himmel"></div>
 <main>
   <!-- ===== Wünsche ===== -->
   <section id="reiter-wuensche" class="reiter sichtbar">
@@ -300,6 +315,7 @@ function runde(w) { return Math.round(parseFloat(w) * 10) / 10; }
 function $(id) { return document.getElementById(id); }
 function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 var letzteTreffer = null, letzteTage = [], letzteStunden = null, offeneTage = {};
+var letzteSonne = null, letzteVersatz = 0;
 
 /* Reiter */
 Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (knopf) {
@@ -308,10 +324,60 @@ Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (
     knopf.classList.add("aktiv");
     Array.prototype.forEach.call(document.querySelectorAll(".reiter"), function (r) { r.classList.remove("sichtbar"); });
     $("reiter-" + knopf.dataset.reiter).classList.add("sichtbar");
+    setzeHintergrund();
     window.scrollTo(0, 0);
   });
 });
 function zeigeReiter(name) { var k = document.querySelector('nav button[data-reiter="' + name + '"]'); if (k) k.click(); }
+function aktiverReiter() { var b = document.querySelector("nav button.aktiv"); return b ? b.dataset.reiter : "wuensche"; }
+
+/* ---------- Himmel-Hintergrund + Tag/Nacht nach Sonnenauf-/-untergang ---------- */
+function zeitZuMinuten(iso) { return parseInt(iso.slice(11, 13), 10) * 60 + parseInt(iso.slice(14, 16), 10); }
+function aktuelleStunde(lokal) {
+  if (!letzteStunden) return null;
+  var p = lokal.toISOString().slice(0, 13);
+  for (var i = 0; i < letzteStunden.time.length; i++) if (letzteStunden.time[i].slice(0, 13) === p) return i;
+  return null;
+}
+function himmelPhase() {
+  var lokal = new Date(Date.now() + (letzteVersatz || 0) * 1000);
+  var nowMin = lokal.getUTCHours() * 60 + lokal.getUTCMinutes();
+  var srMin = 7 * 60, ssMin = 20 * 60;
+  if (letzteSonne && letzteSonne.sunrise && letzteSonne.sunset) {
+    var heute = lokal.toISOString().slice(0, 10), i = 0;
+    for (var k = 0; k < letzteSonne.sunrise.length; k++) if (letzteSonne.sunrise[k].slice(0, 10) === heute) { i = k; break; }
+    srMin = zeitZuMinuten(letzteSonne.sunrise[i]); ssMin = zeitZuMinuten(letzteSonne.sunset[i]);
+  }
+  var d = 35, phase;
+  if (nowMin < srMin - d || nowMin > ssMin + d) phase = "nacht";
+  else if (Math.abs(nowMin - srMin) <= d || Math.abs(nowMin - ssMin) <= d) phase = "daemmerung";
+  else phase = "tag";
+  var wetter = "klar";
+  if (letzteStunden && letzteStunden.weather_code) {
+    var idx = aktuelleStunde(lokal), code = idx != null ? letzteStunden.weather_code[idx] : 0;
+    if (code >= 51) wetter = "regen"; else if (code >= 3) wetter = "wolkig"; else if (code >= 1) wetter = "leicht";
+  }
+  return { phase: phase, wetter: wetter, nacht: phase === "nacht" };
+}
+function himmelVerlauf(z) {
+  if (z.phase === "nacht") return "linear-gradient(180deg,#0b1a38 0%,#152744 55%,#1e3357 100%)";
+  if (z.phase === "daemmerung") return "linear-gradient(180deg,#ff9e6d 0%,#ef8fa3 45%,#6f6fa6 100%)";
+  if (z.wetter === "regen") return "linear-gradient(180deg,#6b7f95 0%,#95a8ba 55%,#bcc9d5 100%)";
+  if (z.wetter === "wolkig") return "linear-gradient(180deg,#8ea9c2 0%,#b7c8d8 55%,#dae3ec 100%)";
+  return "linear-gradient(180deg,#5fa8e6 0%,#9cccf2 55%,#d9edfb 100%)"; // klar/leicht
+}
+function setzeHintergrund() {
+  var z = himmelPhase();
+  document.documentElement.dataset.theme = z.nacht ? "dark" : "light";
+  var himmel = $("himmel");
+  if (aktiverReiter() === "wetter" && zustand.ort) {
+    document.body.classList.add("wetter-modus");
+    himmel.style.background = himmelVerlauf(z);
+  } else {
+    document.body.classList.remove("wetter-modus");
+    himmel.style.background = z.nacht ? "linear-gradient(180deg,#0e1626,#0b111d)" : "linear-gradient(180deg,#eef2f7,#e6ecf3)";
+  }
+}
 
 /* Wetter-Symbole (WMO) */
 function wetterIcon(code) {
@@ -600,10 +666,13 @@ function aktualisiereVorschauLangsam() { clearTimeout(vorschauTimer); vorschauTi
 function wetterCacheKey() { return zustand.ort ? "wwCache_" + zustand.ort.lat + "," + zustand.ort.lon : null; }
 function anwendeVorschau(d) {
   letzteTreffer = d.treffer; letzteTage = d.tage || []; letzteStunden = d.stunden || null;
+  if (d.sonne) letzteSonne = d.sonne;
+  if (d.versatz != null) letzteVersatz = d.versatz;
   Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
     var i = parseInt(ziel.dataset.regel, 10); ziel.innerHTML = trefferHtml(i, zustand.regeln[i]);
   });
   zeichneWetter();
+  setzeHintergrund();
 }
 function aktualisiereVorschau() {
   clearTimeout(vorschauTimer);
@@ -612,7 +681,7 @@ function aktualisiereVorschau() {
     body:JSON.stringify({ lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln }) })
   .then(function (a) { return a.json(); }).then(function (d) {
     if (!d || !d.ok) throw new Error((d && d.fehler) || "unbekannt");
-    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, tage: d.tage, stunden: d.stunden })); } catch (e) {}
+    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, tage: d.tage, stunden: d.stunden, sonne: d.sonne, versatz: d.versatz })); } catch (e) {}
     anwendeVorschau(d);
   }).catch(function (f) {
     // Bei Fehler die zuletzt gespeicherte Vorschau zeigen (macht die App unabhängiger)
@@ -701,11 +770,11 @@ function zeigeDiagrammGross(datum) {
   }
   var titel = datum === heuteIsoLokal() ? "Heute" : (datum.slice(8, 10) + "." + datum.slice(5, 7) + ".");
   var chart = tempWindDiagramm(d.std, d.temp, d.wind, d.boen, d.uv, jetztIndex, true, datum, true);
-  var hg = document.createElement("div"); hg.className = "modal-hg";
-  hg.innerHTML = '<div class="modal" style="max-width:none;width:96vw">'
-    + '<div style="display:flex;align-items:center;margin-bottom:6px"><b style="flex:1">' + titel + '</b>'
+  var hg = document.createElement("div"); hg.className = "modal-hg"; hg.style.padding = "10px";
+  hg.innerHTML = '<div style="width:100%;max-width:760px;background:var(--karte);border:1px solid var(--linie);border-radius:16px;padding:10px 6px 12px">'
+    + '<div style="display:flex;align-items:center;margin:0 6px 4px"><b style="flex:1">' + titel + '</b>'
     + '<button class="knopf zart" id="dg-zu" style="padding:6px 12px">Schließen</button></div>'
-    + chart + '<p class="hinweis" style="margin:6px 0 0">Über das Diagramm streichen für die Werte einzelner Stunden.</p></div>';
+    + chart + '<p class="hinweis" style="margin:6px 6px 0">Über das Diagramm streichen für die Werte einzelner Stunden.</p></div>';
   $("modal-ziel").appendChild(hg);
   verdrahteInteraktion(hg, true);   // im Vergrößern-Fenster kein weiteres Vergrößern
   $("dg-zu").addEventListener("click", function () { $("modal-ziel").innerHTML = ""; });
@@ -767,7 +836,8 @@ function jetztLinie(jetztIndex, px, o, H, u) {
    Dezente halbtransparente Flächen unter den Linien; interaktiv über die .dia-box. */
 function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum, riesig) {
   var n = temp.length; if (!n) return "";
-  var W = 320, H = riesig ? 210 : (gross ? 150 : 100), l = 26, r = 30, o = 12, u = 20;
+  // im Vollbild (riesig) schmale Ränder, damit die Kurven fast die ganze Breite füllen
+  var W = 320, H = riesig ? 200 : (gross ? 150 : 100), l = riesig ? 10 : 26, r = riesig ? 12 : 30, o = 12, u = 20;
   var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
   var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
   var uvMax = uv ? Math.max.apply(null, uv) : 0; if (uvMax <= 0) uvMax = 1;
@@ -782,11 +852,13 @@ function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum, r
     + werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ") + '"/>'; };
   var flaeche = function (werte, f, mapy, op) { var pts = werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ");
     return '<polygon fill="' + f + '" opacity="' + op + '" stroke="none" points="' + px(0).toFixed(1) + "," + basis + " " + pts + " " + px(n - 1).toFixed(1) + "," + basis + '"/>'; };
-  var svg = '<svg class="tw-svg" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur, Wind und UV">'
-    + '<text x="2" y="' + (yT(tmax) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmax) + '°</text>'
+  var achsen = riesig ? "" : (
+      '<text x="2" y="' + (yT(tmax) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmax) + '°</text>'
     + '<text x="2" y="' + (yT(tmin) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmin) + '°</text>'
     + '<text x="' + (W - 2) + '" y="' + (yW(wmax) + 6).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">' + Math.round(wmax) + '</text>'
-    + '<text x="' + (W - 2) + '" y="' + (yW(0) - 1).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">0</text>'
+    + '<text x="' + (W - 2) + '" y="' + (yW(0) - 1).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">0</text>');
+  var svg = '<svg class="tw-svg" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur, Wind und UV">'
+    + achsen
     + jetztLinie(jetztIndex, px, o, H, u)
     + (uv ? flaeche(uv, uvFarbe, yU, ".13") : "")
     + flaeche(wind, windFarbe, yW, ".10")
@@ -929,6 +1001,7 @@ function zeichneNudge() {
 /* ---------- Start ---------- */
 $("push-schalter").checked = !!zustand.aktiviert;
 zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); aktualisiereVorschau();
+setzeHintergrund(); setInterval(setzeHintergrund, 5 * 60 * 1000);
 if (!zustand.willkommenGesehen) zeigeWillkommen();
 </script>
 </body>

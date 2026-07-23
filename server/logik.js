@@ -102,6 +102,7 @@ export async function holeVorhersage(lat, lon, tage = 7, fetchFn = fetch) {
     longitude: String(rundeKoordinate(lon)),
     hourly: "temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,"
           + "cloud_cover,relative_humidity_2m,uv_index,weather_code",
+    daily: "sunrise,sunset",
     forecast_days: String(tage),
     timezone: "auto",
   });

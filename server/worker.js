@@ -179,7 +179,8 @@ export default {
           }));
         });
         return jsonAntwort({ ok: true, treffer, tage: tagesZusammenfassung(vorhersage),
-          stunden: vorhersage.hourly });
+          stunden: vorhersage.hourly, sonne: vorhersage.daily || null,
+          versatz: vorhersage.utc_offset_seconds ?? 0 });
       } catch (f) {
         return jsonAntwort({ ok: false, fehler: "Wetterdaten gerade nicht verfügbar (" + f.message + ")." }, 502);
       }
