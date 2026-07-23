@@ -131,9 +131,9 @@ export function appSeite(vapidPublic) {
   /* Wetter-Tage */
   .tag { border:1px solid var(--linie); border-radius:10px; padding:10px 11px; margin-top:9px; }
   .tag-kopf { display:flex; align-items:center; gap:8px; cursor:pointer; }
-  .tag-kopf .wt { font-weight:700; min-width:74px; }
-  .tag-kopf .icon { font-size:1.2rem; }
-  .tag-kopf .werte { margin-left:auto; text-align:right; font-size:.84rem; }
+  .tag-kopf .wt { font-weight:700; min-width:58px; }
+  .tag-kopf .icon { font-size:1.15rem; }
+  .tag-kopf .werte { margin-left:auto; text-align:right; font-size:.74rem; white-space:nowrap; }
   .tag-kopf .pfeil { color:var(--text2); transition:transform .15s; }
   .tag.offen .tag-kopf .pfeil { transform:rotate(90deg); }
   .details { display:none; margin-top:10px; } .tag.offen .details { display:block; }
@@ -648,9 +648,9 @@ function baueTag(t, gross) {
   var kopf = document.createElement("div"); kopf.className = "tag-kopf";
   kopf.innerHTML = '<span class="wt">' + label + '</span>'
     + '<span class="icon">' + tagIcon(t.datum) + '</span>'
-    + '<span class="werte">' + t.tempMin + "–" + t.tempMax + " °C · 💨 " + t.windMax
-    + (t.boeMax != null ? " 🌬️" + t.boeMax : "") + (t.windRichtung ? " " + t.windRichtung : "")
-    + (t.uvMax != null ? " · UV " + t.uvMax : "") + '</span>'
+    + '<span class="werte">' + t.tempMin + "–" + t.tempMax + "° · 💨" + t.windMax
+    + (t.boeMax != null ? "/" + t.boeMax : "") + (t.windRichtung ? " " + t.windRichtung : "")
+    + (t.uvMax != null ? " · UV" + t.uvMax : "") + '</span>'
     + (gross ? "" : '<span class="pfeil">▸</span>');
   var det = document.createElement("div"); det.className = "details";
   function fuelle() { det.innerHTML = detailHtml(t.datum, gross); det.dataset.gefuellt = "1"; verdrahteInteraktion(det); }
@@ -666,7 +666,7 @@ function baueTag(t, gross) {
 }
 /* Fadenkreuz beim Streichen über das Diagramm; die Werte erscheinen in der
    festen Legendenzeile darüber (läuft nie aus dem Bild). */
-function verdrahteInteraktion(container) {
+function verdrahteInteraktion(container, keinTap) {
   Array.prototype.forEach.call(container.querySelectorAll(".dia-box"), function (box) {
     var svg = box.querySelector(".tw-svg"); if (!svg) return;
     var xline = box.querySelector(".xline");
@@ -683,10 +683,33 @@ function verdrahteInteraktion(container) {
         + (d.boen ? ' 🌬️' + Math.round(d.boen[i]) : "") + (d.dir ? ' ' + d.dir[i] : "")
         + ' · 🌧️' + (Math.round(d.regen[i] * 10) / 10) + (d.uv ? ' · UV' + Math.round(d.uv[i]) : "");
     }
-    box.addEventListener("pointermove", function (e) { bei(e.clientX); });
-    box.addEventListener("pointerdown", function (e) { bei(e.clientX); });
-    box.addEventListener("pointerleave", function () { xline.style.display = "none"; if (legendeEl) legendeEl.innerHTML = standard; });
+    function raus() { xline.style.display = "none"; if (legendeEl) legendeEl.innerHTML = standard; }
+    var startX = 0, startY = 0, bewegt = false;
+    box.addEventListener("pointerdown", function (e) { startX = e.clientX; startY = e.clientY; bewegt = false; });
+    box.addEventListener("pointermove", function (e) { if (Math.abs(e.clientX - startX) > 6 || Math.abs(e.clientY - startY) > 6) bewegt = true; bei(e.clientX); });
+    box.addEventListener("pointerup", function () { if (!keinTap && !bewegt) { raus(); zeigeDiagrammGross(datum); } });
+    box.addEventListener("pointerleave", raus);
   });
+}
+/* Diagramm bildschirmfüllend anzeigen (Tippen auf das Tages-Diagramm). */
+function zeigeDiagrammGross(datum) {
+  var d = tagCache[datum]; if (!d) return;
+  var jetztIndex = null;
+  if (datum === heuteIsoLokal() && d.std.length) {
+    var heute = new Date(), jh = heute.getHours() + heute.getMinutes() / 60 - d.std[0];
+    if (jh >= 0 && jh <= d.std.length - 1) jetztIndex = jh;
+  }
+  var titel = datum === heuteIsoLokal() ? "Heute" : (datum.slice(8, 10) + "." + datum.slice(5, 7) + ".");
+  var chart = tempWindDiagramm(d.std, d.temp, d.wind, d.boen, d.uv, jetztIndex, true, datum, true);
+  var hg = document.createElement("div"); hg.className = "modal-hg";
+  hg.innerHTML = '<div class="modal" style="max-width:none;width:96vw">'
+    + '<div style="display:flex;align-items:center;margin-bottom:6px"><b style="flex:1">' + titel + '</b>'
+    + '<button class="knopf zart" id="dg-zu" style="padding:6px 12px">Schließen</button></div>'
+    + chart + '<p class="hinweis" style="margin:6px 0 0">Über das Diagramm streichen für die Werte einzelner Stunden.</p></div>';
+  $("modal-ziel").appendChild(hg);
+  verdrahteInteraktion(hg, true);   // im Vergrößern-Fenster kein weiteres Vergrößern
+  $("dg-zu").addEventListener("click", function () { $("modal-ziel").innerHTML = ""; });
+  hg.addEventListener("click", function (e) { if (e.target === hg) $("modal-ziel").innerHTML = ""; });
 }
 function tagIcon(datum) {
   if (!letzteStunden || !letzteStunden.weather_code) return "🌡️";
@@ -742,9 +765,9 @@ function jetztLinie(jetztIndex, px, o, H, u) {
 }
 /* Doppelachsen-Diagramm: Temperatur (rot) + Wind/Böen (türkis) + UV (Fläche).
    Dezente halbtransparente Flächen unter den Linien; interaktiv über die .dia-box. */
-function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum) {
+function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum, riesig) {
   var n = temp.length; if (!n) return "";
-  var W = 320, H = gross ? 150 : 100, l = 26, r = 30, o = 12, u = 20;
+  var W = 320, H = riesig ? 210 : (gross ? 150 : 100), l = 26, r = 30, o = 12, u = 20;
   var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
   var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
   var uvMax = uv ? Math.max.apply(null, uv) : 0; if (uvMax <= 0) uvMax = 1;
@@ -752,8 +775,9 @@ function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum) {
   var yT = function (v) { return o + (1 - (v - tmin) / (tmax - tmin)) * (H - o - u); };
   var yW = function (v) { return o + (1 - v / wmax) * (H - o - u); };
   var yU = function (v) { return o + (1 - v / uvMax) * (H - o - u); };
-  var tempFarbe = "#e11d48", windFarbe = "#0891b2", uvFarbe = "#f59e0b";
-  var sw = gross ? 3 : 2.4, basis = (H - u).toFixed(1);
+  // dezente, gedämpfte Farben
+  var tempFarbe = "#dd6b7a", windFarbe = "#5a9bab", uvFarbe = "#d8a24f";
+  var sw = riesig ? 3.2 : (gross ? 2.8 : 2.2), basis = (H - u).toFixed(1);
   var linie = function (werte, f, mapy, extra) { return '<polyline fill="none" stroke="' + f + '" stroke-width="' + sw + '" stroke-linejoin="round" stroke-linecap="round" ' + (extra || "") + ' points="'
     + werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ") + '"/>'; };
   var flaeche = function (werte, f, mapy, op) { var pts = werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ");
@@ -764,9 +788,9 @@ function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum) {
     + '<text x="' + (W - 2) + '" y="' + (yW(wmax) + 6).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">' + Math.round(wmax) + '</text>'
     + '<text x="' + (W - 2) + '" y="' + (yW(0) - 1).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">0</text>'
     + jetztLinie(jetztIndex, px, o, H, u)
-    + (uv ? flaeche(uv, uvFarbe, yU, ".16") : "")
-    + flaeche(wind, windFarbe, yW, ".12")
-    + flaeche(temp, tempFarbe, yT, ".12")
+    + (uv ? flaeche(uv, uvFarbe, yU, ".13") : "")
+    + flaeche(wind, windFarbe, yW, ".10")
+    + flaeche(temp, tempFarbe, yT, ".10")
     + (boen ? linie(boen, windFarbe, yW, 'stroke-dasharray="3 3" opacity=".55"') : "")
     + linie(wind, windFarbe, yW) + linie(temp, tempFarbe, yT)
     + xBeschriftung(std).map(function (p) { return '<text x="' + px(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("")
