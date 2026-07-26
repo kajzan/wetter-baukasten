@@ -30,26 +30,56 @@ export function appSeite(vapidPublic) {
     --linie:#dde4ea; --akzent:#2563eb; --akzent-hell:#e8effd;
     --gruen:#15803d; --gruen-hell:#e6f4ea; --rot:#b91c1c; --rot-hell:#fdeaea;
     --glas:rgba(255,255,255,.45); --glas-linie:rgba(255,255,255,.6);
+    --glas-tief:rgba(255,255,255,.62); --glas-nav:rgba(255,255,255,.72);
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :root { --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
             --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
             --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
-            --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16); }
+            --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
+            --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7); }
   }
   :root[data-theme="dark"] {
     --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
     --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
     --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
     --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
+    --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7);
   }
-  /* Himmel-Hintergrund + Glas-Karten auf der Wetter-Seite */
-  #himmel { position:fixed; inset:0; z-index:-1; background:var(--hg); transition:background .8s ease; }
-  body.wetter-modus #reiter-wetter > .karte { background:transparent; border:none; padding:0; }
-  body.wetter-modus #reiter-wetter .tag { background:var(--glas); border-color:var(--glas-linie);
-    -webkit-backdrop-filter:blur(9px); backdrop-filter:blur(9px); }
-  body.wetter-modus #reiter-wetter h2, body.wetter-modus #reiter-wetter .hinweis { text-shadow:0 1px 2px rgba(0,0,0,.08); }
+
+  /* ---- Himmel-Hintergrund (Verlauf + gezeichnetes Wetter) ---- */
+  #himmel { position:fixed; inset:0; z-index:-1; overflow:hidden;
+    background:var(--hg); transition:background .8s ease; }
+  #himmel-deko { position:absolute; inset:0; }
+  #himmel-deko svg { position:absolute; inset:0; width:100%; height:100%; }
+  @keyframes fallen { to { transform:translateY(12px); } }
+  @keyframes rieseln { to { transform:translateY(12px); } }
+  @keyframes funkeln { 50% { opacity:.15; } }
+  @keyframes ziehen { to { transform:translateX(8px); } }
+  .niederschlag { animation:fallen .62s linear infinite; }
+  .schneefall { animation:rieseln 5.5s linear infinite; }
+  .sterne circle { animation:funkeln 4s ease-in-out infinite; }
+  .wolkenzug { animation:ziehen 34s ease-in-out infinite alternate; }
+  @media (prefers-reduced-motion: reduce) {
+    .niederschlag, .schneefall, .sterne circle, .wolkenzug { animation:none; }
+  }
+
+  /* ---- Glas-Oberflächen über dem Himmel ---- */
+  body.himmel-modus .karte { background:var(--glas); border-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(8px) saturate(1.25); backdrop-filter:blur(8px) saturate(1.25); }
+  body.himmel-modus #reiter-wetter > .karte { background:transparent; border:none; padding:0;
+    -webkit-backdrop-filter:none; backdrop-filter:none; }
+  body.himmel-modus #reiter-wetter .tag { background:var(--glas); border-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(8px) saturate(1.25); backdrop-filter:blur(8px) saturate(1.25); }
+  body.himmel-modus input[type=text], body.himmel-modus input[type=number], body.himmel-modus select,
+  body.himmel-modus .vorlagen button, body.himmel-modus #ort-ergebnisse button,
+  body.himmel-modus .sektoren button:not(.an), body.himmel-modus .regel,
+  body.himmel-modus .emoji-gitter button:not(.an) {
+    background:var(--glas-tief); border-color:var(--glas-linie); }
+  body.himmel-modus nav { background:var(--glas-nav); border-top-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); }
+  body.himmel-modus h2, body.himmel-modus .hinweis, body.himmel-modus .untertitel { text-shadow:0 1px 2px rgba(0,0,0,.08); }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
          background:transparent; color:var(--text); line-height:1.5; -webkit-text-size-adjust:100%; }
@@ -110,7 +140,8 @@ export function appSeite(vapidPublic) {
   .regel-huelle { position:relative; margin-top:10px; }
   .regel-huelle .loeschbg { position:absolute; inset:0; background:var(--rot-hell); color:var(--rot);
     border-radius:12px; display:flex; align-items:center; justify-content:flex-end; padding-right:18px;
-    font-weight:700; font-size:.9rem; }
+    font-weight:700; font-size:.9rem; opacity:0; transition:opacity .12s; }
+  .regel-huelle.wischt .loeschbg { opacity:1; }
   .regel { position:relative; border:1px solid var(--linie); border-radius:12px; padding:11px 12px;
     background:var(--karte); touch-action:pan-y; }
   .regel.inaktiv { opacity:.55; }
@@ -181,13 +212,20 @@ export function appSeite(vapidPublic) {
 </style>
 </head>
 <body>
-<div id="himmel"></div>
+<div id="himmel"><div id="himmel-deko"></div></div>
 <main>
   <!-- ===== Wünsche ===== -->
   <section id="reiter-wuensche" class="reiter sichtbar">
     <div id="nudge"></div>
     <section class="karte">
-      <h2 id="ort-titel">📍 Dein Ort</h2>
+      <h2>Deine Wetter-Wünsche</h2>
+      <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Regel nach links wischen zum Löschen.</p>
+      <div class="vorlagen" id="vorlagen"></div>
+      <div id="regel-liste"></div>
+    </section>
+
+    <section class="karte">
+      <h2 id="ort-titel">Dein Ort</h2>
       <div id="ort-anzeige" style="display:none">
         <div class="ort-kopf">
           <span class="pin">📍</span>
@@ -209,19 +247,12 @@ export function appSeite(vapidPublic) {
       <div id="ortskarte"></div>
       <p class="hinweis" id="karte-note" style="display:none;margin-bottom:0">Tippe auf die Karte, um deinen Ort zu setzen.</p>
     </section>
-
-    <section class="karte">
-      <h2>🎯 Deine Wetter-Wünsche</h2>
-      <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Regel nach links wischen zum Löschen.</p>
-      <div class="vorlagen" id="vorlagen"></div>
-      <div id="regel-liste"></div>
-    </section>
   </section>
 
   <!-- ===== Wetter ===== -->
   <section id="reiter-wetter" class="reiter">
     <section class="karte">
-      <h2>🌤️ Vorhersage (7 Tage)</h2>
+      <h2>Vorhersage (7 Tage)</h2>
       <p class="hinweis" id="wetter-hinweis">Wähle zuerst im Reiter „Wünsche“ deinen Ort.</p>
       <div id="wetter-tage"></div>
       <p class="hinweis" style="margin-top:12px">Tipp: Tag antippen für Stundenwerte und Diagramme.</p>
@@ -231,7 +262,7 @@ export function appSeite(vapidPublic) {
   <!-- ===== Einstellungen ===== -->
   <section id="reiter-einstellungen" class="reiter">
     <section class="karte">
-      <h2>🔔 Benachrichtigungen</h2>
+      <h2>Benachrichtigungen</h2>
       <div class="schalter-zeile">
         <span class="txt">Push-Benachrichtigungen</span>
         <label class="schalter"><input type="checkbox" id="push-schalter"><span class="bahn"></span></label>
@@ -241,12 +272,12 @@ export function appSeite(vapidPublic) {
       <div id="push-status"></div>
     </section>
     <section class="karte">
-      <h2>🗑️ Daten</h2>
+      <h2>Daten</h2>
       <p class="hinweis">Alles im Browser Gespeicherte löschen und dieses Gerät vom Wächter abmelden.</p>
       <button class="knopf rot" id="loeschen" style="padding:9px 13px;font-size:.85rem">Alles löschen</button>
     </section>
     <section class="karte">
-      <details><summary style="cursor:pointer;font-weight:700;font-size:1.02rem">ℹ️ Was diese App kann</summary>
+      <details><summary style="cursor:pointer;font-weight:700;font-size:1.02rem">Was diese App kann</summary>
         <ul style="font-size:.88rem;padding-left:20px;margin:10px 0 0">
           <li>Ort per Suche, 📍-Standort oder Karte wählen (nur gerundet, ~11 km)</li>
           <li>Wetter-Wünsche aus Vorlagen antippen oder eigene Regeln bauen</li>
@@ -329,7 +360,6 @@ Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (
   });
 });
 function zeigeReiter(name) { var k = document.querySelector('nav button[data-reiter="' + name + '"]'); if (k) k.click(); }
-function aktiverReiter() { var b = document.querySelector("nav button.aktiv"); return b ? b.dataset.reiter : "wuensche"; }
 
 /* ---------- Himmel-Hintergrund + Tag/Nacht nach Sonnenauf-/-untergang ---------- */
 function zeitZuMinuten(iso) { return parseInt(iso.slice(11, 13), 10) * 60 + parseInt(iso.slice(14, 16), 10); }
@@ -339,6 +369,41 @@ function aktuelleStunde(lokal) {
   for (var i = 0; i < letzteStunden.time.length; i++) if (letzteStunden.time[i].slice(0, 13) === p) return i;
   return null;
 }
+/* Wetterlage aus dem WMO-Code – bestimmt Farbverlauf und gezeichnetes Wetter. */
+function wetterArt(code) {
+  if (code === null || code === undefined) return "klar";
+  if (code >= 95) return "gewitter";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "schnee";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "regen";
+  if (code === 45 || code === 48) return "nebel";
+  if (code === 3) return "wolkig";
+  if (code >= 1) return "leicht";
+  return "klar";
+}
+var HIMMEL_FARBEN = {
+  tag: { klar:["#5fa8e6","#9cccf2","#d9edfb"], leicht:["#63a9e2","#a3cded","#dceaf6"],
+         wolkig:["#8ea9c2","#b7c8d8","#dae3ec"], nebel:["#9aa8b4","#c3ccd4","#e2e6ea"],
+         regen:["#6b7f95","#95a8ba","#bcc9d5"], gewitter:["#4a5568","#6b7a8f","#98a5b4"],
+         schnee:["#93a7bd","#c4cfdb","#e8edf2"] },
+  daemmerung: { klar:["#ff9e6d","#ef8fa3","#6f6fa6"], leicht:["#fb9d75","#e78fa4","#6d6ea6"],
+         wolkig:["#d99177","#b98c9c","#66688c"], nebel:["#c6a094","#b0a0a8","#6c7089"],
+         regen:["#a8846f","#95818f","#5c6180"], gewitter:["#8a6c62","#7a6c7c","#4e5470"],
+         schnee:["#c49a8c","#ada0ac","#6a6d8c"] },
+  nacht: { klar:["#0b1a38","#152744","#1e3357"], leicht:["#0b1a38","#152744","#1e3357"],
+         wolkig:["#0d1626","#182338","#26344c"], nebel:["#111a26","#1c2734","#2b3644"],
+         regen:["#0a1220","#141d2e","#212c40"], gewitter:["#080e19","#111827","#1c2637"],
+         schnee:["#0c1524","#182234","#28334a"] }
+};
+/* Wolkenfarbe je Lage: tagsüber weiß bis grau, nachts dunkle Silhouetten. */
+var WOLKEN_FARBEN = {
+  tag: { klar:["#ffffff",".85"], leicht:["#ffffff",".88"], wolkig:["#e4ebf2",".95"], nebel:["#dde4ea",".85"],
+         regen:["#9fb0c0",".95"], gewitter:["#6b7a8c",".95"], schnee:["#d3dde6",".95"] },
+  daemmerung: { klar:["#ffe0cc",".85"], leicht:["#ffe0cc",".88"], wolkig:["#e5cbc2",".92"], nebel:["#dbc9c3",".85"],
+         regen:["#9e8b90",".95"], gewitter:["#6f6169",".95"], schnee:["#d6c8cb",".92"] },
+  nacht: { klar:["#26364e",".9"], leicht:["#26364e",".9"], wolkig:["#243254",".95"], nebel:["#2c3a4c",".85"],
+         regen:["#1b2739",".95"], gewitter:["#131b29",".97"], schnee:["#2d3d57",".95"] }
+};
+
 function himmelPhase() {
   var lokal = new Date(Date.now() + (letzteVersatz || 0) * 1000);
   var nowMin = lokal.getUTCHours() * 60 + lokal.getUTCMinutes();
@@ -354,29 +419,117 @@ function himmelPhase() {
   else phase = "tag";
   var wetter = "klar";
   if (letzteStunden && letzteStunden.weather_code) {
-    var idx = aktuelleStunde(lokal), code = idx != null ? letzteStunden.weather_code[idx] : 0;
-    if (code >= 51) wetter = "regen"; else if (code >= 3) wetter = "wolkig"; else if (code >= 1) wetter = "leicht";
+    var idx = aktuelleStunde(lokal);
+    if (idx !== null) wetter = wetterArt(letzteStunden.weather_code[idx]);
   }
   return { phase: phase, wetter: wetter, nacht: phase === "nacht" };
 }
 function himmelVerlauf(z) {
-  if (z.phase === "nacht") return "linear-gradient(180deg,#0b1a38 0%,#152744 55%,#1e3357 100%)";
-  if (z.phase === "daemmerung") return "linear-gradient(180deg,#ff9e6d 0%,#ef8fa3 45%,#6f6fa6 100%)";
-  if (z.wetter === "regen") return "linear-gradient(180deg,#6b7f95 0%,#95a8ba 55%,#bcc9d5 100%)";
-  if (z.wetter === "wolkig") return "linear-gradient(180deg,#8ea9c2 0%,#b7c8d8 55%,#dae3ec 100%)";
-  return "linear-gradient(180deg,#5fa8e6 0%,#9cccf2 55%,#d9edfb 100%)"; // klar/leicht
+  var f = HIMMEL_FARBEN[z.phase][z.wetter];
+  return "linear-gradient(180deg," + f[0] + " 0%," + f[1] + " 55%," + f[2] + " 100%)";
 }
+
+/* ---- Bausteine des gezeichneten Himmels (SVG, Zeichenfläche 100 x 62) ---- */
+function svgWolke(x, y, s) {
+  return '<g transform="translate(' + x + ',' + y + ') scale(' + s + ')">'
+    + '<ellipse cx="0" cy="0" rx="10" ry="6.2"/><ellipse cx="-7.6" cy="2.2" rx="8" ry="5"/>'
+    + '<ellipse cx="8.4" cy="2.6" rx="7.2" ry="4.4"/><rect x="-15" y="1.4" width="30" height="5.4" rx="2.7"/></g>';
+}
+function svgWolken(z, gross) {
+  var f = WOLKEN_FARBEN[z.phase][z.wetter], teile;
+  if (gross === 1) teile = [[30, 46, 0.8]];
+  else if (gross === 2) teile = [[24, 40, 1.05], [71, 70, 0.8], [46, 14, 0.62]];
+  else teile = [[27, 42, 1.2], [73, 74, 0.92], [48, 14, 0.72]];
+  var s = '<g class="wolkenzug" fill="' + f[0] + '" opacity="' + f[1] + '" filter="url(#weich)">';
+  for (var i = 0; i < teile.length; i++) s += svgWolke(teile[i][0], teile[i][1], teile[i][2]);
+  return s + '</g>';
+}
+/* Eine Kachel Niederschlag; alle Kacheln sind gleich, damit die Schleife nahtlos läuft. */
+function svgRegenKachel() {
+  var s = "";
+  for (var i = 0; i < 14; i++) {
+    var x = (i * 27.7) % 100, y = (i * 5.3) % 12;
+    s += '<line x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x - 0.9).toFixed(1) + '" y2="' + (y + 3.2).toFixed(1) + '"/>';
+  }
+  return s;
+}
+function svgSchneeKachel() {
+  var s = "";
+  for (var i = 0; i < 16; i++) {
+    var x = (i * 23.9) % 100, y = (i * 4.7) % 12;
+    s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (0.4 + (i % 3) * 0.14).toFixed(2) + '"/>';
+  }
+  return s;
+}
+/* Niederschlag füllt den ganzen Bildschirm (eigene, hochformatige Zeichenfläche). */
+function svgNiederschlag(art, nacht) {
+  var kachel = art === "schnee" ? svgSchneeKachel() : svgRegenKachel();
+  var inhalt = "";
+  for (var y = -12; y < 232; y += 12) inhalt += '<g transform="translate(0,' + y + ')">' + kachel + '</g>';
+  var gruppe = art === "schnee"
+    ? '<g class="schneefall" fill="' + (nacht ? "#cfdcec" : "#ffffff") + '" opacity="' + (nacht ? ".5" : ".75") + '">' + inhalt + '</g>'
+    : '<g class="niederschlag" stroke="' + (nacht ? "#8fa6c0" : "#eef4fa") + '" stroke-width=".45" stroke-linecap="round"'
+      + ' opacity="' + (nacht ? ".5" : ".6") + '">' + inhalt + '</g>';
+  return '<svg viewBox="0 0 100 220" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' + gruppe + '</svg>';
+}
+function svgSterne() {
+  var s = '<g class="sterne" fill="#ffffff">';
+  for (var i = 0; i < 44; i++) {
+    var x = (i * 29.7 + 3) % 100, y = (i * 13.7) % 96;
+    s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (0.22 + (i % 4) * 0.08).toFixed(2)
+      + '" opacity="' + (0.3 + (i % 5) * 0.12).toFixed(2) + '" style="animation-delay:' + ((i % 7) * 0.55).toFixed(2) + 's"></circle>';
+  }
+  return s + '</g>';
+}
+function svgSonne(cx, cy, r, mitte, kranz) {
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="url(#sonnenschein)"/>'
+    + '<circle cx="' + cx + '" cy="' + cy + '" r="' + kranz + '" fill="' + mitte + '" opacity=".97"/>';
+}
+function svgMond() {
+  return '<circle cx="75" cy="20" r="16" fill="url(#mondschein)"/>'
+    + '<rect width="100" height="130" fill="#eef4ff" mask="url(#mondmaske)"/>';
+}
+/* Baut den kompletten Himmel; der Schlüssel verhindert unnötiges Neuzeichnen. */
+function himmelDeko(z) {
+  var w = z.wetter, offen = (w === "klar" || w === "leicht"), teile = "";
+  var warm = z.phase === "daemmerung";
+  var farben = warm
+    ? '<stop offset="0" stop-color="#fff1d6" stop-opacity=".78"/><stop offset=".35" stop-color="#ffc98a" stop-opacity=".42"/><stop offset="1" stop-color="#ff9e6d" stop-opacity="0"/>'
+    : '<stop offset="0" stop-color="#fffbe8" stop-opacity=".62"/><stop offset=".35" stop-color="#ffeaa0" stop-opacity=".3"/><stop offset="1" stop-color="#ffd979" stop-opacity="0"/>';
+  var defs = '<defs><radialGradient id="sonnenschein">' + farben + '</radialGradient>'
+    + '<radialGradient id="mondschein"><stop offset="0" stop-color="#dce8ff" stop-opacity=".26"/>'
+    + '<stop offset=".45" stop-color="#cfdcf5" stop-opacity=".12"/>'
+    + '<stop offset="1" stop-color="#dce8ff" stop-opacity="0"/></radialGradient>'
+    + '<mask id="mondmaske"><rect width="100" height="130" fill="#000"/>'
+    + '<circle cx="75" cy="20" r="7" fill="#fff"/><circle cx="71.2" cy="17.2" r="6.2" fill="#000"/></mask>'
+    + '<filter id="weich" x="-25%" y="-25%" width="150%" height="150%"><feGaussianBlur stdDeviation=".6"/></filter></defs>';
+
+  if (z.nacht) { if (offen) teile += svgSterne() + svgMond(); }
+  else if (warm) { teile += svgSonne(74, 68, 38, "#ffdba0", 7.5); }
+  else if (offen) { teile += svgSonne(79, 17, 34, "#fffcea", 6.4); }
+  else if (w === "wolkig" || w === "nebel") { teile += '<g opacity=".4">' + svgSonne(79, 17, 30, "#fff8dc", 5.6) + '</g>'; }
+
+  if (w === "leicht") teile += svgWolken(z, 1);
+  else if (w === "wolkig" || w === "nebel") teile += svgWolken(z, 2);
+  else if (w !== "klar") teile += svgWolken(z, 3);
+
+  var himmelskoerper = '<svg viewBox="0 0 100 130" preserveAspectRatio="xMidYMin meet" aria-hidden="true">' + defs + teile + '</svg>';
+  var nass = "";
+  if (w === "regen" || w === "gewitter") nass = svgNiederschlag("regen", z.nacht);
+  else if (w === "schnee") nass = svgNiederschlag("schnee", z.nacht);
+
+  return { schluessel: z.phase + "|" + w, svg: himmelskoerper + nass };
+}
+
 function setzeHintergrund() {
   var z = himmelPhase();
   document.documentElement.dataset.theme = z.nacht ? "dark" : "light";
-  var himmel = $("himmel");
-  if (aktiverReiter() === "wetter" && zustand.ort) {
-    document.body.classList.add("wetter-modus");
-    himmel.style.background = himmelVerlauf(z);
-  } else {
-    document.body.classList.remove("wetter-modus");
-    himmel.style.background = z.nacht ? "linear-gradient(180deg,#0e1626,#0b111d)" : "linear-gradient(180deg,#eef2f7,#e6ecf3)";
-  }
+  document.body.classList.add("himmel-modus");
+  $("himmel").style.background = himmelVerlauf(z);
+  var deko = $("himmel-deko"), neu = himmelDeko(z);
+  if (deko.dataset.stand !== neu.schluessel) { deko.dataset.stand = neu.schluessel; deko.innerHTML = neu.svg; }
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", HIMMEL_FARBEN[z.phase][z.wetter][0]);
 }
 
 /* Wetter-Symbole (WMO) */
@@ -548,6 +701,9 @@ function entferneRegel(i) {
 }
 function macheWischbar(el, onDelete) {
   var startX = 0, startY = 0, dx = 0, aktiv = false;
+  /* Der rote „Löschen“-Grund wird nur während des Wischens gezeigt – sonst
+     schimmerte er durch die durchsichtigen Glas-Karten hindurch. */
+  var huelle = function () { return el.parentNode; };
   el.addEventListener("touchstart", function (e) {
     if (e.touches.length !== 1) return;
     startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; aktiv = true; el.style.transition = "";
@@ -555,13 +711,15 @@ function macheWischbar(el, onDelete) {
   el.addEventListener("touchmove", function (e) {
     if (!aktiv) return;
     var x = e.touches[0].clientX - startX, y = e.touches[0].clientY - startY;
-    if (Math.abs(y) > Math.abs(x)) { aktiv = false; el.style.transform = ""; return; }
-    dx = Math.min(0, x); el.style.transform = "translateX(" + dx + "px)";
+    if (Math.abs(y) > Math.abs(x)) { aktiv = false; el.style.transform = ""; huelle().classList.remove("wischt"); return; }
+    dx = Math.min(0, x);
+    if (dx < 0) huelle().classList.add("wischt");
+    el.style.transform = "translateX(" + dx + "px)";
   }, { passive: true });
   el.addEventListener("touchend", function () {
     if (!aktiv) return; aktiv = false; el.style.transition = "transform .15s";
     if (dx < -90) { el.style.transform = "translateX(-100%)"; setTimeout(onDelete, 130); }
-    else { el.style.transform = "translateX(0)"; }
+    else { el.style.transform = "translateX(0)"; huelle().classList.remove("wischt"); }
     dx = 0;
   });
 }
