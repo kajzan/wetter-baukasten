@@ -29,6 +29,7 @@ import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
          normalisiereRegeln, rundeKoordinate } from "./logik.js";
 import { sendeWebPush } from "./webpush.js";
 import { appSeite } from "./seite.js";
+import { baukastenSeite } from "./baukasten.js";
 
 // Öffentlicher VAPID-Schlüssel (darf öffentlich sein). Der private liegt
 // ausschließlich als Cloudflare-Secret VAPID_PRIVATE.
@@ -146,6 +147,9 @@ export default {
 
     if (anfrage.method === "GET") {
       if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC), {
+        headers: { "Content-Type": "text/html; charset=utf-8" } });
+      // Versuchsfeld für die neue Regelform (nirgends verlinkt, kein Push)
+      if (pfad === "/baukasten") return new Response(baukastenSeite(), {
         headers: { "Content-Type": "text/html; charset=utf-8" } });
       if (pfad === "/sw.js") return new Response(SERVICE_WORKER, {
         headers: { "Content-Type": "application/javascript; charset=utf-8" } });

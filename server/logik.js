@@ -48,6 +48,116 @@ export function stundePasst(bedingungen, temp, wind, regen, wolken, feuchte, win
   return true;
 }
 
+/* ===================================================================
+   Bausteine – die neue Regelform mit „oder“
+   ===================================================================
+   Eine Regel besteht aus Bausteinen. ALLE Bausteine müssen passen (und);
+   innerhalb eines Bausteins genügt EINE Alternative (oder). Beispiel:
+
+     [ { teile: [ {art:"temp", min:18, max:28} ] },
+       { teile: [ {art:"regen", max:0} ] },
+       { teile: [ {art:"wind", max:10},
+                  {art:"windrichtung", sektoren:["N","NO","NW"]} ] } ]
+
+   liest sich als: 18–28 °C und kein Regen und (Wind höchstens 10 km/h
+   oder Wind aus N/NO/NW).
+
+   Die alte Form (regel.bedingungen) bleibt unverändert gültig; findeTreffer
+   nutzt die Bausteine nur, wenn eine Regel welche mitbringt.            */
+export const BAUSTEIN_ARTEN = {
+  temp:         { wert: "temp",    bez: "Temperatur",   einheit: "°C",   min: -20, max: 45,  schritt: 1,   emoji: "🌡️" },
+  wind:         { wert: "wind",    bez: "Wind",         einheit: "km/h", min: 0,   max: 120, schritt: 1,   emoji: "💨" },
+  boe:          { wert: "boe",     bez: "Windböen",     einheit: "km/h", min: 0,   max: 150, schritt: 1,   emoji: "🌬️" },
+  regen:        { wert: "regen",   bez: "Regen",        einheit: "mm/h", min: 0,   max: 10,  schritt: 0.1, emoji: "🌧️" },
+  bewoelkung:   { wert: "wolken",  bez: "Bewölkung",    einheit: "%",    min: 0,   max: 100, schritt: 5,   emoji: "☁️" },
+  feuchte:      { wert: "feuchte", bez: "Luftfeuchte",  einheit: "%",    min: 0,   max: 100, schritt: 5,   emoji: "💧" },
+  uv:           { wert: "uv",      bez: "UV-Index",     einheit: "",     min: 0,   max: 15,  schritt: 1,   emoji: "☀️" },
+  windrichtung: { wert: "windDir", bez: "Windrichtung", einheit: "",                                       emoji: "🧭" },
+};
+export const MAX_BAUSTEINE = 8;      // Bausteine je Regel
+export const MAX_ALTERNATIVEN = 3;   // „oder“-Zeilen je Baustein
+
+/* Prüft eine einzelne Alternative gegen die Werte einer Stunde. */
+export function teilPasst(teil, werte) {
+  const art = BAUSTEIN_ARTEN[teil?.art];
+  if (!art) return false;
+  if (teil.art === "windrichtung") {
+    if (!Array.isArray(teil.sektoren) || !teil.sektoren.length) return true; // nichts gewählt = egal
+    const grad = werte.windDir;
+    if (grad === null || grad === undefined) return false;
+    return teil.sektoren.includes(windSektor(grad));
+  }
+  const wert = werte[art.wert];
+  if (wert === null || wert === undefined) return false;
+  if (teil.min !== undefined && teil.min !== null && wert < teil.min) return false;
+  if (teil.max !== undefined && teil.max !== null && wert > teil.max) return false;
+  return true;
+}
+
+/* Alle Bausteine müssen passen; je Baustein genügt eine Alternative. */
+export function bausteinePassen(bausteine, werte) {
+  for (const baustein of bausteine) {
+    const teile = Array.isArray(baustein?.teile) ? baustein.teile : [];
+    if (!teile.length) continue;                       // leerer Baustein = egal
+    if (!teile.some((teil) => teilPasst(teil, werte))) return false;
+  }
+  return true;
+}
+
+/* Wandelt die alte Bedingungs-Form verlustfrei in Bausteine um:
+   jede bisherige Bedingung wird ein Baustein ohne Alternative. */
+export function bausteineAusBedingungen(bedingungen = {}) {
+  const bereiche = [["temp", "tempMin", "tempMax"], ["wind", "windMin", "windMax"],
+                    ["boe", "boeMin", "boeMax"], ["regen", null, "regenMax"],
+                    ["bewoelkung", "bewoelkungMin", "bewoelkungMax"], ["feuchte", null, "feuchteMax"],
+                    ["uv", "uvMin", "uvMax"]];
+  const bausteine = [];
+  for (const [art, minName, maxName] of bereiche) {
+    const teil = { art };
+    if (minName && bedingungen[minName] !== undefined && bedingungen[minName] !== null) teil.min = bedingungen[minName];
+    if (maxName && bedingungen[maxName] !== undefined && bedingungen[maxName] !== null) teil.max = bedingungen[maxName];
+    if (teil.min !== undefined || teil.max !== undefined) bausteine.push({ teile: [teil] });
+  }
+  if (Array.isArray(bedingungen.windRichtungen) && bedingungen.windRichtungen.length) {
+    bausteine.push({ teile: [{ art: "windrichtung", sektoren: bedingungen.windRichtungen.slice() }] });
+  }
+  return bausteine;
+}
+
+/* Prüft und begrenzt vom Nutzer eingereichte Bausteine (Missbrauchs-Schutz).
+   Rückgabe: geprüfte Bausteine oder null, wenn keine brauchbaren dabei sind. */
+export function normalisiereBausteine(roh) {
+  if (!Array.isArray(roh) || !roh.length) return null;
+  const grenze = (w, min, max) => {
+    const z = Number(w);
+    if (!Number.isFinite(z)) return undefined;
+    return Math.max(min, Math.min(max, z));
+  };
+  const bausteine = [];
+  for (const baustein of roh.slice(0, MAX_BAUSTEINE)) {
+    const teile = [];
+    const rohTeile = Array.isArray(baustein?.teile) ? baustein.teile : [];
+    for (const rohTeil of rohTeile.slice(0, MAX_ALTERNATIVEN)) {
+      const art = BAUSTEIN_ARTEN[rohTeil?.art];
+      if (!art) continue;
+      if (rohTeil.art === "windrichtung") {
+        const sektoren = [...new Set(Array.isArray(rohTeil.sektoren) ? rohTeil.sektoren : [])]
+          .filter((s) => SEKTOR_NAMEN.includes(s));
+        if (sektoren.length && sektoren.length < 8) teile.push({ art: "windrichtung", sektoren });
+        continue;
+      }
+      const teil = { art: rohTeil.art };
+      const min = grenze(rohTeil.min, art.min, art.max);
+      const max = grenze(rohTeil.max, art.min, art.max);
+      if (min !== undefined) teil.min = min;
+      if (max !== undefined) teil.max = max;
+      if (teil.min !== undefined || teil.max !== undefined) teile.push(teil);
+    }
+    if (teile.length) bausteine.push({ teile });
+  }
+  return bausteine.length ? bausteine : null;
+}
+
 /* Sucht pro Tag den ersten ausreichend langen Zeitblock, der zur Regel passt.
    Rückgabe: { "JJJJ-MM-TT": [ { zeitMs, werte:[temp,wind,regen,wolken,feuchte,windDir,uv] } ] } */
 export function findeTreffer(regel, vorhersage, jetztLokalMs) {
@@ -71,7 +181,12 @@ export function findeTreffer(regel, vorhersage, jetztLokalMs) {
     const windDir = stunden.wind_direction_10m ? stunden.wind_direction_10m[i] : undefined;
     const uv = stunden.uv_index ? stunden.uv_index[i] : undefined;
     const boe = stunden.wind_gusts_10m ? stunden.wind_gusts_10m[i] : undefined;
-    if (stundePasst(bedingungen, ...kern, windDir, uv, boe)) {
+    // Neue Bausteinform, sonst unverändert die bewährte Bedingungsprüfung
+    const passt = Array.isArray(regel.bausteine) && regel.bausteine.length
+      ? bausteinePassen(regel.bausteine, { temp: kern[0], wind: kern[1], regen: kern[2],
+          wolken: kern[3], feuchte: kern[4], windDir, uv, boe })
+      : stundePasst(bedingungen, ...kern, windDir, uv, boe);
+    if (passt) {
       passende.push({ zeitMs, werte: [...kern, windDir, uv, boe] });
     }
   }
@@ -199,7 +314,7 @@ export function normalisiereRegeln(regeln) {
       const gefiltert = [...new Set(richtungen)].filter((s) => SEKTOR_NAMEN.includes(s));
       if (gefiltert.length && gefiltert.length < 8) bedingungen.windRichtungen = gefiltert;
     }
-    return {
+    const geprueft = {
       name, emoji,
       aktiv: r?.aktiv !== false,
       haeufigkeit: r?.haeufigkeit === "stuendlich" ? "stuendlich" : "taeglich",
@@ -209,5 +324,8 @@ export function normalisiereRegeln(regeln) {
       mindestdauerStunden: Math.round(zahl(r?.mindestdauerStunden, 1, 24, 2)),
       bedingungen,
     };
+    const bausteine = normalisiereBausteine(r?.bausteine);
+    if (bausteine) geprueft.bausteine = bausteine;
+    return geprueft;
   });
 }
