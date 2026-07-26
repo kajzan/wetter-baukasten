@@ -46,6 +46,10 @@ export function baukastenSeite() {
   .hinweis { font-size:.79rem; color:var(--text2); }
   .versuch { background:var(--gelb-hell); color:var(--gelb); border-radius:9px;
     padding:7px 10px; font-size:.8rem; margin:0 2px 10px; }
+  .modus-aus { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:var(--akzent-hell); border:1px solid var(--akzent); border-radius:10px;
+    padding:9px 11px; margin:0 2px 10px; font-size:.82rem; }
+  .modus-aus > div { flex:1; min-width:170px; }
   .knopf { display:inline-block; border:0; border-radius:9px; cursor:pointer;
     padding:9px 13px; font-size:.9rem; font-weight:600; background:var(--akzent); color:#fff; }
   .knopf.zart { background:var(--akzent-hell); color:var(--akzent); }
@@ -175,6 +179,8 @@ export function baukastenSeite() {
   <h1>Baukasten-Demo</h1>
   <p class="versuch"><b>Versuchsfeld.</b> Hier probieren wir die neue Regelform mit „oder“ aus.
   Diese Seite verschickt <b>keine</b> Benachrichtigungen und ändert nichts an deinen echten Wünschen.</p>
+
+  <div id="modus-hinweis"></div>
 
   <section class="karte">
     <h2>Ort</h2>
@@ -406,6 +412,16 @@ function zeichneSchalter() {
   $("erweitert-erklaerung").innerHTML = erweitert
     ? "An: Du kannst Bausteine mit „+ oder“ zu Alternativen kombinieren."
     : "Aus: Alle Bausteine werden mit <b>und</b> verknüpft – wie in der bisherigen App.";
+  // Der ausgeschaltete Zustand muss sofort sichtbar sein: sonst sucht man oben
+  // vergeblich nach „+ oder“ und den Anfassern, während der Schalter unten steht.
+  var ziel = $("modus-hinweis");
+  if (erweitert) { ziel.innerHTML = ""; return; }
+  ziel.innerHTML = '<div class="modus-aus"><div><b>Erweiterte Regeln sind aus.</b> '
+    + 'Deshalb gibt es kein „+ oder“ und kein Ziehen – alle Bausteine sind mit <b>und</b> verknüpft.</div>'
+    + '<button class="knopf" type="button" id="modus-an">Einschalten</button></div>';
+  $("modus-an").addEventListener("click", function () {
+    erweitert = true; speichere(); zeichneAlles(); window.scrollTo(0, 0);
+  });
 }
 $("erweitert-schalter").addEventListener("change", function () {
   erweitert = this.checked; speichere(); zeichneAlles();
@@ -488,7 +504,10 @@ function zeichneRegel(regel, ri) {
     });
     karte.appendChild(palette);
     var wink = document.createElement("p"); wink.className = "hinweis"; wink.style.margin = "2px 0 0";
-    wink.textContent = "Antippen hängt an. Ziehen: auf einen Baustein = oder, dazwischen = und.";
+    // Im einfachen Modus nicht mit Ziehen werben – das gibt es dort nicht.
+    wink.textContent = erweitert
+      ? "Antippen hängt an. Ziehen: auf einen Baustein = oder, dazwischen = und."
+      : "Antippen hängt einen Baustein an (muss zusätzlich passen).";
     karte.appendChild(wink);
   }
 
