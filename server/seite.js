@@ -103,6 +103,15 @@ export function appSeite(vapidPublic) {
   .knopf.breit { width:100%; }
   .knopf:disabled { opacity:.5; cursor:default; }
   .hinweis { font-size:.82rem; color:var(--text2); }
+  /* Überschrift mit kleinem (i) zum Aufklappen der Erklärung */
+  .info-feld > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
+    font-size:1.02rem; font-weight:700; margin-bottom:10px; }
+  .info-feld > summary::-webkit-details-marker { display:none; }
+  .info-feld .i-kreis { width:20px; height:20px; border-radius:50%; border:1.5px solid var(--akzent);
+    color:var(--akzent); font-size:.76rem; font-weight:700; font-style:italic; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; line-height:1; }
+  .info-feld[open] .i-kreis { background:var(--akzent); color:#fff; }
+  .info-feld > p { margin:0 0 12px; }
   .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:8px 10px; font-size:.86rem; margin-top:8px; }
   .erfolg { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:8px 10px; font-size:.86rem; margin-top:8px; font-weight:600; }
 
@@ -115,9 +124,9 @@ export function appSeite(vapidPublic) {
   .reiter { display:none; } .reiter.sichtbar { display:block; }
 
   /* Ort */
-  .ort-kopf { display:flex; align-items:flex-start; gap:8px; }
+  .ort-kopf { display:flex; align-items:center; gap:8px; }
   .ort-kopf .pin { font-size:1.15rem; line-height:1.4; }
-  .ort-kopf .info { flex:1; min-width:0; }
+  .ort-kopf .info { flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:0 7px; }
   .ort-kopf .nam { font-weight:700; }
   .ort-kopf .koord { font-size:.78rem; color:var(--text2); }
   #ort-ergebnisse button { display:block; width:100%; text-align:left; background:var(--hg);
@@ -229,7 +238,7 @@ export function appSeite(vapidPublic) {
       <div id="ort-anzeige" style="display:none">
         <div class="ort-kopf">
           <span class="pin">📍</span>
-          <div class="info"><div class="nam" id="ort-name"></div><div class="koord" id="ort-koord"></div></div>
+          <div class="info"><span class="nam" id="ort-name"></span><span class="koord" id="ort-koord"></span></div>
           <button class="knopf zart" id="ort-aendern" style="padding:7px 11px;font-size:.82rem">Ändern</button>
         </div>
       </div>
@@ -255,20 +264,21 @@ export function appSeite(vapidPublic) {
       <h2>Vorhersage (7 Tage)</h2>
       <p class="hinweis" id="wetter-hinweis">Wähle zuerst im Reiter „Wünsche“ deinen Ort.</p>
       <div id="wetter-tage"></div>
-      <p class="hinweis" style="margin-top:12px">Tipp: Tag antippen für Stundenwerte und Diagramme.</p>
     </section>
   </section>
 
   <!-- ===== Einstellungen ===== -->
   <section id="reiter-einstellungen" class="reiter">
     <section class="karte">
-      <h2>Benachrichtigungen</h2>
+      <details class="info-feld">
+        <summary><span class="titel-text">Benachrichtigungen</span><span class="i-kreis" aria-hidden="true">i</span></summary>
+        <p class="hinweis">An = dein Handy fragt nach Erlaubnis; danach meldet sich der Wächter,
+        sobald ein Wunsch zutrifft. <b>iPhone/iPad:</b> Seite zuerst über das Teilen-Symbol „Zum Home-Bildschirm“ hinzufügen und von dort öffnen.</p>
+      </details>
       <div class="schalter-zeile">
         <span class="txt">Push-Benachrichtigungen</span>
         <label class="schalter"><input type="checkbox" id="push-schalter"><span class="bahn"></span></label>
       </div>
-      <p class="hinweis" id="push-erklaerung" style="margin-top:8px">An = dein Handy fragt nach Erlaubnis; danach meldet sich der Wächter,
-      sobald ein Wunsch zutrifft. <b>iPhone/iPad:</b> Seite zuerst über das Teilen-Symbol „Zum Home-Bildschirm“ hinzufügen und von dort öffnen.</p>
       <div id="push-status"></div>
     </section>
     <section class="karte">
@@ -279,14 +289,18 @@ export function appSeite(vapidPublic) {
     <section class="karte">
       <details><summary style="cursor:pointer;font-weight:700;font-size:1.02rem">Was diese App kann</summary>
         <ul style="font-size:.88rem;padding-left:20px;margin:10px 0 0">
-          <li>Ort per Suche, 📍-Standort oder Karte wählen (nur gerundet, ~11 km)</li>
-          <li>Wetter-Wünsche aus Vorlagen antippen oder eigene Regeln bauen</li>
-          <li>Bedingungen: Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte, UV</li>
-          <li>Einstellbares Zeitfenster (1–7 Tage), Uhrzeit-Fenster und Mindestdauer</li>
-          <li>7-Tage-Vorhersage mit Stundenwerten und Diagrammen</li>
-          <li>Push-Benachrichtigung, sobald ein Wunsch zutrifft (stündliche Prüfung)</li>
+          <li><b>Ort wählen</b> – per Suche, über 📍 dein Standort oder direkt auf der Karte. Gespeichert wird immer nur eine gerundete Position (~11 km).</li>
+          <li><b>Wünsche anlegen</b> – Vorlage antippen (Pizzatag, Wäschetag, Sturm-Warnung …) oder eine eigene Regel mit eigenem Emoji bauen. Zum Löschen die Regel nach links wischen.</li>
+          <li><b>Bedingungen</b> – Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte und UV, jeweils als Mindest- und/oder Höchstwert.</li>
+          <li><b>Zeit festlegen</b> – Vorschau-Fenster von 1 bis 7 Tagen, erlaubte Uhrzeiten und wie lange das Wetter am Stück passen muss.</li>
+          <li><b>Benachrichtigung pro Regel</b> – einmal am Tag oder stündlich (z. B. für Sturm-Warnungen).</li>
+          <li><b>Wetter ansehen</b> – 7 Tage mit Stundenwerten. Über die Diagramme streichen zeigt die Werte einzelner Stunden; ein Tipp auf das Temperatur-Diagramm vergrößert es.</li>
+          <li><b>Hintergrund</b> – der Himmel zeigt die aktuelle Wetterlage und wechselt zum Sonnenauf- und -untergang deines Ortes zwischen hell und dunkel.</li>
+          <li><b>Zum Home-Bildschirm</b> – als App installierbar; nur dann sind auf iPhone/iPad Push-Nachrichten möglich.</li>
+          <li><b>Alles löschbar</b> – „Alles löschen“ entfernt die Daten im Browser und meldet dieses Gerät ab.</li>
         </ul>
-        <p class="hinweis" style="margin:8px 0 0">Kostenlos · Wetterdaten: Open-Meteo · Karte: OpenStreetMap · Nachrichten ohne Ortsangaben · nur gerundeter Ort.</p>
+        <p class="hinweis" style="margin:8px 0 0">Kostenlos · Wetterdaten: Open-Meteo · Karte: OpenStreetMap · Ortsname: BigDataCloud ·
+        Nachrichten enthalten nie eine Ortsangabe · gespeichert wird nur der gerundete Ort.</p>
       </details>
     </section>
   </section>
@@ -592,7 +606,7 @@ $("ort-aendern").addEventListener("click", function () {
 function zeichneOrt() {
   if (zustand.ort) {
     $("ort-name").textContent = zustand.ort.name;
-    $("ort-koord").textContent = zustand.ort.lat + " / " + zustand.ort.lon + " · gerundet";
+    $("ort-koord").textContent = "· " + zustand.ort.lat + " / " + zustand.ort.lon + " · gerundet";
     $("ort-anzeige").style.display = ""; $("ort-suche").style.display = "none"; $("ort-titel").style.display = "none";
   } else { $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; }
 }
@@ -900,21 +914,28 @@ function verdrahteInteraktion(container, keinTap) {
     var legendeEl = box.parentNode.querySelector(".tw-legende");
     var standard = legendeEl ? legendeEl.innerHTML : "";
     var W = +svg.dataset.w, l = +svg.dataset.l, r = +svg.dataset.r, n = +svg.dataset.n, datum = box.dataset.datum;
+    // Balken sitzen mittig im Fach, Linienpunkte genau auf dem Raster
+    var balken = svg.dataset.art === "balken", breite = W - l - r;
+    var mitte = function (i) { return balken ? l + (i + 0.5) * (breite / n) : l + i * (breite / (n - 1)); };
+    var nurRegen = box.dataset.feld === "regen";
     function bei(clientX) {
       var rect = svg.getBoundingClientRect(); if (!rect.width) return;
-      var svgX = (clientX - rect.left) / rect.width * W, step = (W - l - r) / (n - 1);
-      var i = Math.round((svgX - l) / step); if (i < 0) i = 0; if (i > n - 1) i = n - 1;
-      xline.style.left = ((l + i * step) / W * rect.width) + "px"; xline.style.display = "block";
+      var svgX = (clientX - rect.left) / rect.width * W;
+      var i = balken ? Math.floor((svgX - l) / (breite / n)) : Math.round((svgX - l) / (breite / (n - 1)));
+      if (i < 0) i = 0; if (i > n - 1) i = n - 1;
+      xline.style.left = (mitte(i) / W * rect.width) + "px"; xline.style.display = "block";
       var d = tagCache[datum]; if (!d || !legendeEl) return;
-      legendeEl.innerHTML = '<b>' + d.std[i] + ' Uhr</b> · 🌡️' + Math.round(d.temp[i]) + '° · 💨' + Math.round(d.wind[i])
-        + (d.boen ? ' 🌬️' + Math.round(d.boen[i]) : "") + (d.dir ? ' ' + d.dir[i] : "")
-        + ' · 🌧️' + (Math.round(d.regen[i] * 10) / 10) + (d.uv ? ' · UV' + Math.round(d.uv[i]) : "");
+      legendeEl.innerHTML = nurRegen
+        ? '<b>' + d.std[i] + ' Uhr</b> · 🌧️ ' + (Math.round(d.regen[i] * 10) / 10) + ' mm'
+        : '<b>' + d.std[i] + ' Uhr</b> · 🌡️' + Math.round(d.temp[i]) + '° · 💨' + Math.round(d.wind[i])
+          + (d.boen ? ' 🌬️' + Math.round(d.boen[i]) : "") + (d.dir ? ' ' + d.dir[i] : "")
+          + ' · 🌧️' + (Math.round(d.regen[i] * 10) / 10) + (d.uv ? ' · UV' + Math.round(d.uv[i]) : "");
     }
     function raus() { xline.style.display = "none"; if (legendeEl) legendeEl.innerHTML = standard; }
     var startX = 0, startY = 0, bewegt = false;
     box.addEventListener("pointerdown", function (e) { startX = e.clientX; startY = e.clientY; bewegt = false; });
     box.addEventListener("pointermove", function (e) { if (Math.abs(e.clientX - startX) > 6 || Math.abs(e.clientY - startY) > 6) bewegt = true; bei(e.clientX); });
-    box.addEventListener("pointerup", function () { if (!keinTap && !bewegt) { raus(); zeigeDiagrammGross(datum); } });
+    box.addEventListener("pointerup", function () { if (!keinTap && !nurRegen && !bewegt) { raus(); zeigeDiagrammGross(datum); } });
     box.addEventListener("pointerleave", raus);
   });
 }
@@ -981,7 +1002,7 @@ function detailHtml(datum, gross) {
   }
   return '<div class="stundenreihe">' + stunden.join("") + '</div>'
     + tempWindDiagramm(std, temp, wind, boen, uvArr, jetztIndex, gross, datum)
-    + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb", jetztIndex, gross);
+    + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb", jetztIndex, gross, datum);
 }
 /* Dezente senkrechte Linie an der aktuellen Uhrzeit. */
 function jetztLinie(jetztIndex, px, o, H, u) {
@@ -1048,7 +1069,9 @@ function linienDiagramm(titel, einheit, std, werte, farbe) {
     + '<polyline fill="none" stroke="' + farbe + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + punkte + '"/>'
     + ticks + '</svg></div>';
 }
-function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex, gross) {
+/* Balken-Diagramm (Regen) – wie das Temperatur-Diagramm über die .dia-box
+   bestreichbar; die Stundenwerte erscheinen in der Titelzeile. */
+function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex, gross, datum) {
   var n = werte.length; if (!n) return "";
   var max = Math.max.apply(null, werte); if (max <= 0) max = 1;
   var W = 320, H = gross ? 100 : 78, l = 6, r = 6, o = 10, u = 20;
@@ -1059,9 +1082,12 @@ function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex, gross) {
     var hh = (v / max) * (H - o - u); return '<rect x="' + (l + i * bw + 0.5).toFixed(1) + '" y="' + (H - u - hh).toFixed(1)
       + '" width="' + (bw - 1).toFixed(1) + '" height="' + hh.toFixed(1) + '" fill="' + farbe + '" opacity=".85"/>';
   }).join("");
-  var ticks = xBeschriftung(std).map(function (p) { return '<text x="' + (l + p[0] * bw + bw / 2).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("");
-  return '<div class="diagramm"><div class="titel"><span>' + titel + '</span><span>' + summe + ' ' + einheit + ' gesamt</span></div>'
-    + '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + titel + '">' + balken + jetztLinie(jetztIndex, pxBar, o, H, u) + ticks + '</svg></div>';
+  var ticks = xBeschriftung(std).map(function (p) { return '<text x="' + pxBar(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("");
+  var svg = '<svg class="tw-svg" data-art="balken" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '"'
+    + ' viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + titel + '">'
+    + balken + jetztLinie(jetztIndex, pxBar, o, H, u) + ticks + '</svg>';
+  return '<div class="diagramm"><div class="titel"><span class="tw-legende">' + titel + '</span><span>' + summe + ' ' + einheit + ' gesamt</span></div>'
+    + '<div class="dia-box" data-datum="' + datum + '" data-feld="regen">' + svg + '<div class="xline"></div></div></div>';
 }
 
 /* ---------- Benachrichtigungen (Schalter) ---------- */
