@@ -92,8 +92,9 @@ export function baukastenSeite() {
   .teilkopf .weg { border:0; background:none; color:var(--text2); cursor:pointer; font-size:.95rem;
     padding:1px 5px; line-height:1; }
   /* „+ oder“ sitzt in der Kopfzeile des Bausteins, damit keine eigene Zeile nötig ist */
-  .teilkopf .oder-knopf { border:1px solid var(--akzent); background:var(--akzent-hell); color:var(--akzent);
-    border-radius:999px; padding:1px 9px; font-size:.72rem; font-weight:700; cursor:pointer; line-height:1.5; }
+  .teilkopf .oder-knopf { border:0; background:var(--akzent); color:#fff; flex-shrink:0;
+    border-radius:999px; padding:4px 11px; font-size:.74rem; font-weight:700; cursor:pointer;
+    line-height:1.3; letter-spacing:.02em; }
   .oder-marke { display:inline-block; background:var(--akzent); color:#fff; border-radius:5px;
     padding:0 6px; font-size:.66rem; font-weight:700; letter-spacing:.06em; margin-bottom:2px; }
   .grenze { display:grid; grid-template-columns:74px 20px 1fr 54px; gap:5px; align-items:center; padding:0; }
@@ -120,18 +121,24 @@ export function baukastenSeite() {
   .auswahl button.benutzt::after { content:" ✓"; font-weight:700; }
 
   /* ---- Ziehbare Baustein-Leiste ---- */
-  .palette { display:flex; gap:5px; margin-top:7px; overflow-x:auto; padding:1px 0 3px;
-    scrollbar-width:none; -ms-overflow-style:none; }
-  .palette::-webkit-scrollbar { display:none; }
+  /* Umbrechend statt scrollend: sonst beansprucht der Browser ein schraeges
+     Ziehen als waagerechtes Wischen der Leiste und bricht es ab (pointercancel).
+     Ohne Scrollbedarf darf touch-action:none gelten. */
+  .palette { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
   .palette .p-chip { flex:0 0 auto; border:1px dashed var(--linie); background:var(--hg); color:var(--text);
-    border-radius:999px; padding:5px 11px; font-size:.83rem; cursor:grab; white-space:nowrap;
-    touch-action:pan-x; user-select:none; -webkit-user-select:none; }
+    border-radius:999px; padding:5px 10px; font-size:.82rem; cursor:grab; white-space:nowrap;
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
   .palette .p-chip.benutzt { opacity:.55; }
   .palette .p-chip.benutzt::after { content:" ✓"; font-weight:700; }
 
   /* ---- Ziehen: Anfasser, Ziele, Geist ---- */
-  .teilkopf .griff { color:var(--text2); cursor:grab; font-size:.92rem; line-height:1;
-    padding:3px 1px; touch-action:none; user-select:none; -webkit-user-select:none; }
+  /* WICHTIG: touch-action wirkt nicht auf inline-Elementen. Der Anfasser muss
+     deshalb ein Block sein, sonst scrollt iOS weiter und bricht das Ziehen ab.
+     Ausserdem gross genug zum Treffen mit dem Daumen. */
+  .teilkopf .griff { display:flex; align-items:center; justify-content:center;
+    width:30px; height:30px; margin-left:-6px; flex-shrink:0;
+    color:var(--akzent); cursor:grab; font-size:1.05rem; line-height:1;
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
   .baustein.ziel-oder { outline:2px solid var(--akzent); outline-offset:1px; background:var(--akzent-hell); }
   .baustein.ziel-voll { outline:2px solid var(--rot); outline-offset:1px; }
   .teil.wandert { opacity:.35; }
@@ -205,14 +212,14 @@ export function baukastenSeite() {
 
 /* Muss zu BAUSTEIN_ARTEN in logik.js passen. */
 var ARTEN = {
-  temp:         { bez:"Temperatur",   einheit:"°C",   min:-20, max:45,  schritt:1,   emoji:"🌡️", standard:{min:18,max:26} },
-  wind:         { bez:"Wind",         einheit:"km/h", min:0,   max:120, schritt:1,   emoji:"💨", standard:{max:15} },
-  boe:          { bez:"Windböen",     einheit:"km/h", min:0,   max:150, schritt:1,   emoji:"🌬️", standard:{max:40} },
-  regen:        { bez:"Regen",        einheit:"mm/h", min:0,   max:10,  schritt:0.1, emoji:"🌧️", standard:{max:0} },
-  bewoelkung:   { bez:"Bewölkung",    einheit:"%",    min:0,   max:100, schritt:5,   emoji:"☁️", standard:{max:60} },
-  feuchte:      { bez:"Luftfeuchte",  einheit:"%",    min:0,   max:100, schritt:5,   emoji:"💧", standard:{max:70} },
-  uv:           { bez:"UV-Index",     einheit:"",     min:0,   max:15,  schritt:1,   emoji:"☀️", standard:{min:6} },
-  windrichtung: { bez:"Windrichtung", einheit:"",                                    emoji:"🧭", standard:{sektoren:["N","NO","NW"]} }
+  temp:         { bez:"Temperatur",   kurz:"Temp",     einheit:"°C",   min:-20, max:45,  schritt:1,   emoji:"🌡️", standard:{min:18,max:26} },
+  wind:         { bez:"Wind",         kurz:"Wind",     einheit:"km/h", min:0,   max:120, schritt:1,   emoji:"💨", standard:{max:15} },
+  boe:          { bez:"Windböen",     kurz:"Böen",     einheit:"km/h", min:0,   max:150, schritt:1,   emoji:"🌬️", standard:{max:40} },
+  regen:        { bez:"Regen",        kurz:"Regen",    einheit:"mm/h", min:0,   max:10,  schritt:0.1, emoji:"🌧️", standard:{max:0} },
+  bewoelkung:   { bez:"Bewölkung",    kurz:"Wolken",   einheit:"%",    min:0,   max:100, schritt:5,   emoji:"☁️", standard:{max:60} },
+  feuchte:      { bez:"Luftfeuchte",  kurz:"Feuchte",  einheit:"%",    min:0,   max:100, schritt:5,   emoji:"💧", standard:{max:70} },
+  uv:           { bez:"UV-Index",     kurz:"UV",       einheit:"",     min:0,   max:15,  schritt:1,   emoji:"☀️", standard:{min:6} },
+  windrichtung: { bez:"Windrichtung", kurz:"Richtung", einheit:"",                                    emoji:"🧭", standard:{sektoren:["N","NO","NW"]} }
 };
 var ARTEN_REIHE = ["temp","wind","boe","windrichtung","regen","bewoelkung","feuchte","uv"];
 var SEKTOREN = ["N","NO","O","SO","S","SW","W","NW"];
@@ -466,7 +473,8 @@ function zeichneRegel(regel, ri) {
       var chip = document.createElement("button"); chip.type = "button";
       chip.className = "p-chip" + (benutzt[art] ? " benutzt" : "");
       chip.dataset.art = art;
-      chip.textContent = ARTEN[art].emoji + " " + ARTEN[art].bez;
+      chip.textContent = ARTEN[art].emoji + " " + (ARTEN[art].kurz || ARTEN[art].bez);
+      chip.title = ARTEN[art].bez;
       chip.addEventListener("click", function () {
         if (zuletztGezogen) return;              // Klick nach dem Ziehen unterdrücken
         regel.bausteine = (regel.bausteine || []).concat([{ teile: [neuerTeil(art)] }]);
@@ -671,32 +679,40 @@ var zieht = null, zuletztGezogen = false, rollTimer = null;
 
 function starteZiehen(e, quelle, beschriftung) {
   if (!erweitert || e.button > 0 || zieht) return;
-  e.preventDefault();
+  // KEIN preventDefault hier: auf iOS würde das den anschließenden Klick
+  // unterdrücken, und Antippen soll weiter funktionieren. Gegen das Scrollen
+  // hilft touch-action in der CSS, nicht preventDefault.
+  // Zeiger einfangen, sonst verliert iOS die Bewegung, sobald der Finger das
+  // kleine Element verlässt.
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (f) {}
   // startX/startY: Ein reines Antippen (ohne Bewegung) darf kein Ziehen sein,
   // sonst schluckt es den Klick auf den Chip.
   zieht = { quelle: quelle, ziel: null, zeiger: e.pointerId,
             startX: e.clientX, startY: e.clientY, bewegt: false };
-  document.body.classList.add("zieht");
-
-  var geist = document.createElement("div"); geist.id = "zieh-geist";
-  geist.textContent = beschriftung;
-  document.body.appendChild(geist);
-  zieht.geist = geist;
-
-  if (quelle.typ === "teil") {
-    var reihen = document.querySelectorAll('.regel[data-regel="' + quelle.regelIndex + '"] .baustein[data-baustein="'
-      + (regelnBausteinIndex(quelle.regel, quelle.baustein)) + '"] .teil');
-    if (reihen[quelle.ti]) reihen[quelle.ti].classList.add("wandert");
-  }
-  bewegeGeist(e.clientX, e.clientY);
+  zieht.beschriftung = beschriftung;
   document.addEventListener("pointermove", beiZiehen, { passive: false });
   document.addEventListener("pointerup", beendeZiehen);
   document.addEventListener("pointercancel", brichZiehenAb);
 }
 function regelnBausteinIndex(regel, baustein) { return (regel.bausteine || []).indexOf(baustein); }
 
+/* Der mitlaufende Chip entsteht erst bei echter Bewegung – beim bloßen
+   Antippen soll nichts aufblitzen. */
+function zeigeGeist() {
+  var quelle = zieht.quelle;
+  document.body.classList.add("zieht");
+  var geist = document.createElement("div"); geist.id = "zieh-geist";
+  geist.textContent = zieht.beschriftung;
+  document.body.appendChild(geist);
+  zieht.geist = geist;
+  if (quelle.typ === "teil") {
+    var reihen = document.querySelectorAll('.regel[data-regel="' + quelle.regelIndex + '"] .baustein[data-baustein="'
+      + regelnBausteinIndex(quelle.regel, quelle.baustein) + '"] .teil');
+    if (reihen[quelle.ti]) reihen[quelle.ti].classList.add("wandert");
+  }
+}
 function bewegeGeist(x, y) {
-  if (!zieht) return;
+  if (!zieht || !zieht.geist) return;
   zieht.geist.style.left = (x + 14) + "px";
   zieht.geist.style.top = (y - 14) + "px";
   var breite = zieht.geist.offsetWidth;
@@ -705,10 +721,13 @@ function bewegeGeist(x, y) {
 
 function beiZiehen(e) {
   if (!zieht) return;
+  if (!zieht.bewegt) {
+    if (Math.abs(e.clientX - zieht.startX) <= 5 && Math.abs(e.clientY - zieht.startY) <= 5) return;
+    zieht.bewegt = true;
+    zeigeGeist();
+  }
   e.preventDefault();
-  if (Math.abs(e.clientX - zieht.startX) > 5 || Math.abs(e.clientY - zieht.startY) > 5) zieht.bewegt = true;
   bewegeGeist(e.clientX, e.clientY);
-  if (!zieht.bewegt) return;
   zieht.ziel = findeAblegeZiel(e.clientX, e.clientY);
   zeigeZiel();
   rolleAmRand(e.clientY);

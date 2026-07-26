@@ -146,13 +146,15 @@ export default {
     if (anfrage.method === "OPTIONS") return new Response(null, { status: 204, headers: JSON_KOPF });
 
     if (anfrage.method === "GET") {
+      // no-cache: die Seiten aendern sich haeufig, sonst zeigt der Browser
+      // (vor allem Safari) noch tagelang die alte Fassung.
       if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC), {
-        headers: { "Content-Type": "text/html; charset=utf-8" } });
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
       // Versuchsfeld für die neue Regelform (nirgends verlinkt, kein Push)
       if (pfad === "/baukasten") return new Response(baukastenSeite(), {
-        headers: { "Content-Type": "text/html; charset=utf-8" } });
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
       if (pfad === "/sw.js") return new Response(SERVICE_WORKER, {
-        headers: { "Content-Type": "application/javascript; charset=utf-8" } });
+        headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-cache" } });
       if (pfad === "/manifest.json") return new Response(MANIFEST, {
         headers: { "Content-Type": "application/manifest+json" } });
       if (pfad === "/icon.svg") return new Response(ICON_SVG, {
