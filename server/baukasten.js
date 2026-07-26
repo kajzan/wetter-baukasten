@@ -119,6 +119,36 @@ export function baukastenSeite() {
   .auswahl button.benutzt { opacity:.55; }
   .auswahl button.benutzt::after { content:" ✓"; font-weight:700; }
 
+  /* ---- Ziehbare Baustein-Leiste ---- */
+  .palette { display:flex; gap:5px; margin-top:7px; overflow-x:auto; padding:1px 0 3px;
+    scrollbar-width:none; -ms-overflow-style:none; }
+  .palette::-webkit-scrollbar { display:none; }
+  .palette .p-chip { flex:0 0 auto; border:1px dashed var(--linie); background:var(--hg); color:var(--text);
+    border-radius:999px; padding:5px 11px; font-size:.83rem; cursor:grab; white-space:nowrap;
+    touch-action:pan-x; user-select:none; -webkit-user-select:none; }
+  .palette .p-chip.benutzt { opacity:.55; }
+  .palette .p-chip.benutzt::after { content:" ✓"; font-weight:700; }
+
+  /* ---- Ziehen: Anfasser, Ziele, Geist ---- */
+  .teilkopf .griff { color:var(--text2); cursor:grab; font-size:.92rem; line-height:1;
+    padding:3px 1px; touch-action:none; user-select:none; -webkit-user-select:none; }
+  .baustein.ziel-oder { outline:2px solid var(--akzent); outline-offset:1px; background:var(--akzent-hell); }
+  .baustein.ziel-voll { outline:2px solid var(--rot); outline-offset:1px; }
+  .teil.wandert { opacity:.35; }
+  body.zieht { user-select:none; -webkit-user-select:none; }
+  body.zieht .p-chip, body.zieht .griff { cursor:grabbing; }
+  #zieh-geist { position:fixed; z-index:60; pointer-events:none; background:var(--karte);
+    border:1px solid var(--akzent); border-radius:999px; padding:5px 12px; font-size:.83rem;
+    font-weight:600; box-shadow:0 5px 16px rgba(0,0,0,.28); white-space:nowrap; }
+  #zieh-linie { position:fixed; z-index:59; pointer-events:none; height:3px;
+    background:var(--akzent); border-radius:2px; }
+  #zieh-linie::after { content:"UND"; position:absolute; left:12px; top:-9px;
+    background:var(--akzent); color:#fff; font-size:.6rem; font-weight:700;
+    padding:1px 6px; border-radius:4px; letter-spacing:.09em; }
+  #zieh-marke { position:fixed; z-index:61; pointer-events:none; background:var(--akzent); color:#fff;
+    font-size:.62rem; font-weight:700; letter-spacing:.09em; padding:2px 7px; border-radius:5px; }
+  #zieh-marke.voll { background:var(--rot); }
+
   /* ---- Satz, Warnung, Treffer ---- */
   .satz { background:var(--akzent-hell); border-radius:9px; padding:6px 9px; margin-top:7px;
     font-size:.8rem; line-height:1.38; }
@@ -401,6 +431,7 @@ function zeichneRegeln() {
 
 function zeichneRegel(regel, ri) {
   var karte = document.createElement("section"); karte.className = "regel";
+  karte.dataset.regel = ri;
 
   var kopf = document.createElement("div"); kopf.className = "regelkopf";
   kopf.innerHTML = '<span class="emoji">' + sicher(regel.emoji || "🔔") + '</span>'
@@ -419,26 +450,39 @@ function zeichneRegel(regel, ri) {
   var bau = document.createElement("div"); bau.className = "bausteine";
   (regel.bausteine || []).forEach(function (baustein, bi) {
     if (bi > 0) { var t = document.createElement("p"); t.className = "und-trenner"; t.textContent = "und"; bau.appendChild(t); }
-    bau.appendChild(zeichneBaustein(regel, baustein, bi));
+    bau.appendChild(zeichneBaustein(regel, baustein, bi, ri));
   });
   karte.appendChild(bau);
 
-  // Ein Knopf statt einer Chip-Reihe je Regel – spart spürbar Höhe.
-  var auswahl = document.createElement("div"); auswahl.className = "auswahl";
+  // Baustein-Leiste: antippen hängt an (und), ziehen entscheidet Platz und Art.
   if ((regel.bausteine || []).length >= MAX_BAUSTEINE) {
-    auswahl.innerHTML = '<p class="hinweis" style="margin:0">Mehr als ' + MAX_BAUSTEINE + ' Bausteine sind nicht vorgesehen.</p>';
+    var voll = document.createElement("div"); voll.className = "auswahl";
+    voll.innerHTML = '<p class="hinweis" style="margin:0">Mehr als ' + MAX_BAUSTEINE + ' Bausteine sind nicht vorgesehen.</p>';
+    karte.appendChild(voll);
   } else {
-    var neu = document.createElement("button");
-    neu.className = "knopf zart klein"; neu.type = "button"; neu.id = "baustein-" + ri;
-    neu.textContent = "+ Baustein";
-    neu.addEventListener("click", function () { zeigeArtWahl({ regel: regel }); });
-    auswahl.appendChild(neu);
-    var wink = document.createElement("span"); wink.className = "hinweis";
-    wink.textContent = "muss zusätzlich passen (und)";
-    auswahl.appendChild(wink);
+    var benutzt = benutzteArten(regel.bausteine);
+    var palette = document.createElement("div"); palette.className = "palette";
+    ARTEN_REIHE.forEach(function (art) {
+      var chip = document.createElement("button"); chip.type = "button";
+      chip.className = "p-chip" + (benutzt[art] ? " benutzt" : "");
+      chip.dataset.art = art;
+      chip.textContent = ARTEN[art].emoji + " " + ARTEN[art].bez;
+      chip.addEventListener("click", function () {
+        if (zuletztGezogen) return;              // Klick nach dem Ziehen unterdrücken
+        regel.bausteine = (regel.bausteine || []).concat([{ teile: [neuerTeil(art)] }]);
+        speichere(); zeichneAlles();
+      });
+      chip.addEventListener("pointerdown", function (e) {
+        starteZiehen(e, { typ: "palette", art: art, regel: regel, regelIndex: ri },
+                     ARTEN[art].emoji + " " + ARTEN[art].bez);
+      });
+      palette.appendChild(chip);
+    });
+    karte.appendChild(palette);
+    var wink = document.createElement("p"); wink.className = "hinweis"; wink.style.margin = "2px 0 0";
+    wink.textContent = "Antippen hängt an. Ziehen: auf einen Baustein = oder, dazwischen = und.";
+    karte.appendChild(wink);
   }
-  auswahl.style.alignItems = "center";
-  karte.appendChild(auswahl);
 
   var zeit = document.createElement("div"); zeit.className = "zeitleiste";
   var opt = FENSTER.map(function (o) { return '<option value="' + o[0] + '"' + ((regel.zeitfensterStunden || 48) === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
@@ -481,7 +525,7 @@ function neuerTeil(art) {
   return teil;
 }
 
-function zeichneBaustein(regel, baustein, bi) {
+function zeichneBaustein(regel, baustein, bi, regelNummer) {
   var kasten = document.createElement("div");
   kasten.className = "baustein" + (baustein.teile.length > 1 ? " mehrfach" : "");
   kasten.dataset.baustein = bi;
@@ -494,9 +538,14 @@ function zeichneBaustein(regel, baustein, bi) {
     var kopf = document.createElement("div"); kopf.className = "teilkopf";
     var letzte = ti === baustein.teile.length - 1;
     var zeigeOder = letzte && erweitert && baustein.teile.length < MAX_ALTERNATIVEN;
-    kopf.innerHTML = '<span class="sym">' + art.emoji + '</span><span class="bez">' + art.bez + '</span>'
+    kopf.innerHTML = (erweitert ? '<span class="griff" title="Ziehen zum Verschieben" aria-hidden="true">⠿</span>' : "")
+      + '<span class="sym">' + art.emoji + '</span><span class="bez">' + art.bez + '</span>'
       + (zeigeOder ? '<button class="oder-knopf" type="button">+ oder</button>' : "")
       + '<button class="weg" type="button" title="Entfernen" aria-label="Entfernen">✕</button>';
+    if (erweitert) kopf.querySelector(".griff").addEventListener("pointerdown", function (e) {
+      starteZiehen(e, { typ: "teil", regel: regel, regelIndex: regelNummer, baustein: baustein, ti: ti },
+                   art.emoji + " " + art.bez);
+    });
     if (zeigeOder) kopf.querySelector(".oder-knopf").addEventListener("click", function () {
       zeigeArtWahl({ baustein: baustein });
     });
@@ -607,6 +656,200 @@ function zeigeArtWahl(ziel) {
   hg.appendChild(kasten);
   hg.addEventListener("click", function (e) { if (e.target === hg) hg.remove(); });
   document.body.appendChild(hg);
+}
+
+/* ===================================================================
+   Ziehen: Bausteine mit dem Finger umsortieren und kombinieren
+   ===================================================================
+   Gezogen wird entweder ein Chip aus der Leiste (neuer Baustein) oder eine
+   vorhandene Zeile am Anfasser ⠿. Wohin man loslässt, entscheidet:
+     auf einen Baustein   -> die Zeile wird dort zur Alternative (oder)
+     zwischen Bausteine   -> die Zeile wird ein eigener Baustein (und)
+   Die Anfasser haben touch-action:none, deshalb gerät das Ziehen nie mit dem
+   Scrollen der Seite in Konflikt – kein Langdruck nötig.                  */
+var zieht = null, zuletztGezogen = false, rollTimer = null;
+
+function starteZiehen(e, quelle, beschriftung) {
+  if (!erweitert || e.button > 0 || zieht) return;
+  e.preventDefault();
+  // startX/startY: Ein reines Antippen (ohne Bewegung) darf kein Ziehen sein,
+  // sonst schluckt es den Klick auf den Chip.
+  zieht = { quelle: quelle, ziel: null, zeiger: e.pointerId,
+            startX: e.clientX, startY: e.clientY, bewegt: false };
+  document.body.classList.add("zieht");
+
+  var geist = document.createElement("div"); geist.id = "zieh-geist";
+  geist.textContent = beschriftung;
+  document.body.appendChild(geist);
+  zieht.geist = geist;
+
+  if (quelle.typ === "teil") {
+    var reihen = document.querySelectorAll('.regel[data-regel="' + quelle.regelIndex + '"] .baustein[data-baustein="'
+      + (regelnBausteinIndex(quelle.regel, quelle.baustein)) + '"] .teil');
+    if (reihen[quelle.ti]) reihen[quelle.ti].classList.add("wandert");
+  }
+  bewegeGeist(e.clientX, e.clientY);
+  document.addEventListener("pointermove", beiZiehen, { passive: false });
+  document.addEventListener("pointerup", beendeZiehen);
+  document.addEventListener("pointercancel", brichZiehenAb);
+}
+function regelnBausteinIndex(regel, baustein) { return (regel.bausteine || []).indexOf(baustein); }
+
+function bewegeGeist(x, y) {
+  if (!zieht) return;
+  zieht.geist.style.left = (x + 14) + "px";
+  zieht.geist.style.top = (y - 14) + "px";
+  var breite = zieht.geist.offsetWidth;
+  if (x + 14 + breite > window.innerWidth - 6) zieht.geist.style.left = (window.innerWidth - 6 - breite) + "px";
+}
+
+function beiZiehen(e) {
+  if (!zieht) return;
+  e.preventDefault();
+  if (Math.abs(e.clientX - zieht.startX) > 5 || Math.abs(e.clientY - zieht.startY) > 5) zieht.bewegt = true;
+  bewegeGeist(e.clientX, e.clientY);
+  if (!zieht.bewegt) return;
+  zieht.ziel = findeAblegeZiel(e.clientX, e.clientY);
+  zeigeZiel();
+  rolleAmRand(e.clientY);
+}
+
+/* Nahe am oberen/unteren Rand mitscrollen, damit man auch weit weg ablegen kann. */
+function rolleAmRand(y) {
+  var oben = y < 80, unten = y > window.innerHeight - 80;
+  clearInterval(rollTimer); rollTimer = null;
+  if (!oben && !unten) return;
+  rollTimer = setInterval(function () { window.scrollBy(0, oben ? -12 : 12); }, 16);
+}
+
+/* Welcher Platz liegt unter dem Finger? */
+function findeAblegeZiel(x, y) {
+  var karte = document.querySelector('.regel[data-regel="' + zieht.quelle.regelIndex + '"]');
+  if (!karte) return null;
+  var regel = zieht.quelle.regel;
+  var kaesten = Array.prototype.slice.call(karte.querySelectorAll(".baustein"));
+  if (!kaesten.length) return { modus: "und", vorBaustein: null };
+  for (var i = 0; i < kaesten.length; i++) {
+    var r = kaesten[i].getBoundingClientRect();
+    var baustein = regel.bausteine[+kaesten[i].dataset.baustein];
+    if (y < r.top) return { modus: "und", vorBaustein: baustein };
+    if (y <= r.bottom) {
+      var rand = Math.min(16, r.height * 0.26);
+      if (y < r.top + rand) return { modus: "und", vorBaustein: baustein };
+      if (y > r.bottom - rand) return { modus: "und", vorBaustein: regel.bausteine[+kaesten[i].dataset.baustein + 1] || null };
+      return { modus: "oder", baustein: baustein, kasten: kaesten[i] };
+    }
+  }
+  return { modus: "und", vorBaustein: null };
+}
+
+function zeigeZiel() {
+  Array.prototype.forEach.call(document.querySelectorAll(".baustein"), function (k) {
+    k.classList.remove("ziel-oder", "ziel-voll");
+  });
+  var linie = $("zieh-linie"), marke = $("zieh-marke");
+  if (linie) linie.remove();
+  if (marke) marke.remove();
+  var ziel = zieht.ziel; if (!ziel) return;
+  var regel = zieht.quelle.regel;
+  var karte = document.querySelector('.regel[data-regel="' + zieht.quelle.regelIndex + '"]');
+
+  if (ziel.modus === "oder") {
+    var eigener = zieht.quelle.typ === "teil" && zieht.quelle.baustein === ziel.baustein;
+    var passtNoch = ziel.baustein.teile.length < MAX_ALTERNATIVEN;
+    ziel.erlaubt = !eigener && passtNoch;
+    ziel.kasten.classList.add(ziel.erlaubt ? "ziel-oder" : "ziel-voll");
+    var r = ziel.kasten.getBoundingClientRect();
+    setzeMarke(eigener ? "SCHON HIER" : (passtNoch ? "ODER" : "VOLL"), !ziel.erlaubt, r.right - 68, r.top - 8);
+    return;
+  }
+  // „und“: waagerechte Linie an der Einfügestelle
+  var platzFrei = zieht.quelle.typ === "teil" || regel.bausteine.length < MAX_BAUSTEINE;
+  ziel.erlaubt = platzFrei;
+  var block = karte.querySelector(".bausteine").getBoundingClientRect();
+  var yLinie;
+  if (ziel.vorBaustein) {
+    var idx = regel.bausteine.indexOf(ziel.vorBaustein);
+    var el = karte.querySelector('.baustein[data-baustein="' + idx + '"]');
+    yLinie = el ? el.getBoundingClientRect().top - 4 : block.bottom;
+  } else {
+    var alle = karte.querySelectorAll(".baustein");
+    yLinie = alle.length ? alle[alle.length - 1].getBoundingClientRect().bottom + 3 : block.top;
+  }
+  var l = document.createElement("div"); l.id = "zieh-linie";
+  l.style.left = block.left + "px"; l.style.width = block.width + "px"; l.style.top = yLinie + "px";
+  if (!platzFrei) l.style.background = "var(--rot)";
+  document.body.appendChild(l);
+}
+function setzeMarke(text, rot, x, y) {
+  var m = document.createElement("div"); m.id = "zieh-marke";
+  if (rot) m.className = "voll";
+  m.textContent = text;
+  m.style.left = Math.max(6, x) + "px"; m.style.top = Math.max(6, y) + "px";
+  document.body.appendChild(m);
+}
+
+function beendeZiehen() {
+  if (!zieht) return;
+  var quelle = zieht.quelle, ziel = zieht.ziel, bewegt = zieht.bewegt;
+  raeumeZiehenAuf();
+  // Nur getippt: nichts neu zeichnen, sonst geht der Klick auf dem Chip verloren.
+  if (!bewegt) return;
+  zuletztGezogen = true;
+  setTimeout(function () { zuletztGezogen = false; }, 350);
+  if (ziel && ziel.erlaubt !== false && legeAb(quelle, ziel)) speichere();
+  zeichneAlles();
+}
+function brichZiehenAb() {
+  var bewegt = zieht && zieht.bewegt;
+  raeumeZiehenAuf();
+  if (bewegt) zeichneAlles();
+}
+function raeumeZiehenAuf() {
+  document.removeEventListener("pointermove", beiZiehen);
+  document.removeEventListener("pointerup", beendeZiehen);
+  document.removeEventListener("pointercancel", brichZiehenAb);
+  clearInterval(rollTimer); rollTimer = null;
+  if (zieht && zieht.geist) zieht.geist.remove();
+  var l = $("zieh-linie"); if (l) l.remove();
+  var m = $("zieh-marke"); if (m) m.remove();
+  Array.prototype.forEach.call(document.querySelectorAll(".wandert"), function (el) { el.classList.remove("wandert"); });
+  Array.prototype.forEach.call(document.querySelectorAll(".baustein"), function (k) {
+    k.classList.remove("ziel-oder", "ziel-voll");
+  });
+  document.body.classList.remove("zieht");
+  zieht = null;
+}
+
+/* Führt die Ablage aus. Arbeitet mit Objekt-Verweisen statt Indizes, damit das
+   Entfernen der Quelle die Zielposition nicht verschiebt. */
+function legeAb(quelle, ziel) {
+  var regel = quelle.regel, teil;
+  if (quelle.typ === "palette") {
+    if (ziel.modus === "und" && regel.bausteine.length >= MAX_BAUSTEINE) return false;
+    if (ziel.modus === "oder" && ziel.baustein.teile.length >= MAX_ALTERNATIVEN) return false;
+    teil = neuerTeil(quelle.art);
+  } else {
+    var quellBaustein = quelle.baustein;
+    if (ziel.modus === "oder") {
+      if (ziel.baustein === quellBaustein) return false;                 // liegt schon dort
+      if (ziel.baustein.teile.length >= MAX_ALTERNATIVEN) return false;
+    }
+    teil = quellBaustein.teile[quelle.ti];
+    if (!teil) return false;
+    quellBaustein.teile.splice(quelle.ti, 1);
+    if (!quellBaustein.teile.length) {
+      var weg = regel.bausteine.indexOf(quellBaustein);
+      regel.bausteine.splice(weg, 1);
+      // Sollte davor eingefügt werden, rückt der Nachfolger an dieselbe Stelle
+      if (ziel.modus === "und" && ziel.vorBaustein === quellBaustein) ziel.vorBaustein = regel.bausteine[weg] || null;
+    }
+  }
+  if (ziel.modus === "oder") { ziel.baustein.teile.push(teil); return true; }
+  var pos = ziel.vorBaustein ? regel.bausteine.indexOf(ziel.vorBaustein) : regel.bausteine.length;
+  if (pos < 0) pos = regel.bausteine.length;
+  regel.bausteine.splice(pos, 0, { teile: [teil] });
+  return true;
 }
 
 /* Satz und Warnung ohne Neuaufbau auffrischen (beim Schieben der Regler). */
