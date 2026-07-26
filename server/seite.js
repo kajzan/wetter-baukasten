@@ -124,16 +124,18 @@ export function appSeite(vapidPublic) {
   .reiter { display:none; } .reiter.sichtbar { display:block; }
 
   /* Ort */
-  .ort-kopf { display:flex; align-items:center; gap:8px; }
-  .ort-kopf .pin { font-size:1.15rem; line-height:1.4; }
-  .ort-kopf .info { flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:0 7px; }
-  .ort-kopf .nam { font-weight:700; }
-  .ort-kopf .koord { font-size:.78rem; color:var(--text2); }
+  .ort-kopf { display:flex; align-items:center; gap:7px; }
+  .ort-kopf .pin { font-size:1.15rem; line-height:1.4; flex-shrink:0; }
+  /* Name und Koordinaten bleiben in einer Zeile; lange Ortsnamen werden
+     mit … gekürzt, statt die Koordinaten umzubrechen. */
+  .ort-kopf .info { flex:1; min-width:0; display:flex; flex-wrap:nowrap; align-items:baseline; gap:0 6px; }
+  .ort-kopf .nam { font-weight:700; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ort-kopf .koord { font-size:.74rem; color:var(--text2); white-space:nowrap; flex-shrink:0; }
   #ort-ergebnisse button { display:block; width:100%; text-align:left; background:var(--hg);
     border:1px solid var(--linie); border-radius:8px; padding:9px 10px; margin-top:6px; color:var(--text); font-size:.92rem; cursor:pointer; }
   .ort-zeile { display:flex; gap:8px; } .ort-zeile input { flex:1; }
   .ort-zeile .knopf { padding:11px 13px; flex-shrink:0; }
-  .karten-schalter { margin-top:10px; }
+  .karten-schalter { margin-top:10px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
   #ortskarte { height:260px; border-radius:10px; margin-top:10px; display:none; overflow:hidden; z-index:0; }
   #ortskarte.offen { display:block; }
   .leaflet-container { font:inherit; background:var(--hg); }
@@ -252,6 +254,7 @@ export function appSeite(vapidPublic) {
       </div>
       <div class="karten-schalter">
         <button class="knopf zart" id="karte-toggle" style="padding:8px 12px;font-size:.85rem">🗺️ Auf Karte wählen</button>
+        <span class="hinweis">🔒 gerundet (~11 km)</span>
       </div>
       <div id="ortskarte"></div>
       <p class="hinweis" id="karte-note" style="display:none;margin-bottom:0">Tippe auf die Karte, um deinen Ort zu setzen.</p>
@@ -606,7 +609,7 @@ $("ort-aendern").addEventListener("click", function () {
 function zeichneOrt() {
   if (zustand.ort) {
     $("ort-name").textContent = zustand.ort.name;
-    $("ort-koord").textContent = "· " + zustand.ort.lat + " / " + zustand.ort.lon + " · gerundet";
+    $("ort-koord").textContent = "· " + zustand.ort.lat + " / " + zustand.ort.lon;
     $("ort-anzeige").style.display = ""; $("ort-suche").style.display = "none"; $("ort-titel").style.display = "none";
   } else { $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; }
 }
@@ -1019,7 +1022,10 @@ function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum, r
   var W = 320, H = riesig ? 200 : (gross ? 150 : 100), l = riesig ? 10 : 26, r = riesig ? 12 : 30, o = 12, u = 20;
   var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
   var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
-  var uvMax = uv ? Math.max.apply(null, uv) : 0; if (uvMax <= 0) uvMax = 1;
+  // UV hat eine feste Skala 0–10, damit ein UV von 4 an jedem Tag gleich hoch
+  // aussieht; nur bei extremen Werten wird bis 15 erweitert.
+  var uvSpitze = uv ? Math.max.apply(null, uv) : 0;
+  var uvMax = uvSpitze > 10 ? 15 : 10;
   var px = function (i) { return l + i * (W - l - r) / (n - 1); };
   var yT = function (v) { return o + (1 - (v - tmin) / (tmax - tmin)) * (H - o - u); };
   var yW = function (v) { return o + (1 - v / wmax) * (H - o - u); };
