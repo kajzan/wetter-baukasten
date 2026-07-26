@@ -75,16 +75,8 @@ export function baukastenSeite() {
   .schalter input:checked + .bahn::after { left:22px; }
 
   /* ---- Regel ---- */
-  .regel-huelle { position:relative; margin-bottom:10px; }
-  .regel-huelle .loeschgrund { position:absolute; inset:0; background:var(--rot-hell); color:var(--rot);
-    border-radius:12px; display:flex; align-items:center; justify-content:flex-end; padding-right:22px;
-    font-weight:700; font-size:.95rem; opacity:0; transition:opacity .12s; }
-  .regel-huelle.wischt .loeschgrund { opacity:1; }
-  .regel-huelle.reif .loeschgrund { background:var(--rot); color:#fff; }
-  .regel { position:relative; border:1px solid var(--linie); border-radius:12px; padding:10px; background:var(--karte); }
-  /* Nur die Kopfzeile ist wischbar – dort gibt es keine waagerechten Regler,
-     mit denen die Geste kollidieren könnte. */
-  .regelkopf { display:flex; align-items:center; gap:8px; margin-bottom:2px; touch-action:pan-y; }
+  .regel { border:1px solid var(--linie); border-radius:12px; padding:10px; margin-bottom:10px; background:var(--karte); }
+  .regelkopf { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
   .regelkopf .emoji { font-size:1.3rem; }
   .regelkopf .name { flex:1; font-weight:700; font-size:1.02rem; border:0; background:none;
     color:var(--text); padding:1px 0; min-width:0; }
@@ -171,10 +163,10 @@ export function baukastenSeite() {
   #zieh-marke { position:fixed; z-index:61; pointer-events:none; background:var(--akzent); color:#fff;
     font-size:.62rem; font-weight:700; letter-spacing:.09em; padding:2px 7px; border-radius:5px; }
   #zieh-marke.voll { background:var(--rot); }
-  #zieh-abbruch { position:fixed; z-index:62; pointer-events:none; left:50%; top:10px;
+  #zieh-abbruch { position:fixed; z-index:62; pointer-events:none; left:50%; bottom:14px;
     transform:translateX(-50%); background:var(--karte); border:1px solid var(--linie);
-    color:var(--text2); border-radius:999px; padding:6px 14px; font-size:.78rem;
-    box-shadow:0 3px 12px rgba(0,0,0,.2); white-space:nowrap; }
+    color:var(--text2); border-radius:999px; padding:8px 16px; font-size:.8rem;
+    box-shadow:0 -3px 14px rgba(0,0,0,.2); white-space:nowrap; }
   #zieh-abbruch.bereit { background:var(--rot); border-color:var(--rot); color:#fff; }
 
   /* ---- Satz, Warnung, Treffer ---- */
@@ -217,9 +209,6 @@ export function baukastenSeite() {
     <p class="hinweis" style="margin:0">Jeder <b>Baustein</b> ist eine Bedingung. <b>Alle</b> Bausteine müssen
     passen. Mit „+ oder“ legst du eine Alternative in denselben Baustein – dann reicht <b>eine</b> der Zeilen.
     Unten steht immer als Satz, was du gerade gebaut hast, und wie oft es wirklich zutrifft.</p>
-    <p class="hinweis" style="margin:7px 0 0">Einen ganzen Wunsch löschst du über „Löschen“ – oder indem du
-    seine <b>Kopfzeile weit nach links wischst</b> (mindestens eine halbe Kartenbreite, damit es nicht
-    aus Versehen passiert).</p>
   </section>
 
   <section class="karte">
@@ -469,14 +458,7 @@ function benutzteArten(quelle) {
 
 function zeichneRegeln() {
   var ziel = $("regeln"); ziel.innerHTML = "";
-  regeln.forEach(function (regel, ri) {
-    var huelle = document.createElement("div"); huelle.className = "regel-huelle";
-    huelle.innerHTML = '<div class="loeschgrund">🗑️ Löschen</div>';
-    var karte = zeichneRegel(regel, ri);
-    huelle.appendChild(karte);
-    macheRegelWischbar(huelle, karte, karte.querySelector(".regelkopf"), function () { entferneRegel(ri); });
-    ziel.appendChild(huelle);
-  });
+  regeln.forEach(function (regel, ri) { ziel.appendChild(zeichneRegel(regel, ri)); });
 }
 function entferneRegel(ri) {
   regeln.splice(ri, 1);
@@ -484,47 +466,6 @@ function entferneRegel(ri) {
   speichere(); zeichneAlles();
 }
 
-/* Wischen zum Löschen – bewusst schwergängig: erst ab der halben Kartenbreite
-   (mindestens 130 px) wird gelöscht, vorher federt die Karte zurück. */
-function macheRegelWischbar(huelle, karte, kopf, beiLoeschen) {
-  var startX = 0, startY = 0, dx = 0, aktiv = false, schwelle = 130;
-  kopf.addEventListener("touchstart", function (e) {
-    if (e.touches.length !== 1) return;
-    var z = e.target;
-    // Das Namensfeld füllt fast die ganze Kopfzeile – dort muss gewischt werden
-    // dürfen. Nur beim Bearbeiten (Feld hat den Fokus) und auf „Löschen“ nicht.
-    if (z.tagName === "BUTTON" || z === document.activeElement) return;
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; aktiv = true;
-    schwelle = Math.max(130, karte.getBoundingClientRect().width * 0.5);
-    karte.style.transition = "";
-  }, { passive: true });
-  kopf.addEventListener("touchmove", function (e) {
-    if (!aktiv) return;
-    var x = e.touches[0].clientX - startX, y = e.touches[0].clientY - startY;
-    if (Math.abs(y) > Math.abs(x)) { aktiv = false; zurueck(); return; }   // wollte scrollen
-    dx = Math.min(0, x);
-    if (dx < -10) huelle.classList.add("wischt");
-    huelle.classList.toggle("reif", dx < -schwelle);
-    karte.style.transform = "translateX(" + dx + "px)";
-  }, { passive: true });
-  function zurueck() {
-    karte.style.transition = "transform .18s";
-    karte.style.transform = "translateX(0)";
-    huelle.classList.remove("wischt", "reif");
-  }
-  kopf.addEventListener("touchend", function (e) {
-    if (!aktiv) return; aktiv = false;
-    // Sonst landet der Fokus im Namensfeld und die Tastatur springt auf.
-    if (dx < -10 && e.cancelable) e.preventDefault();
-    if (dx < -schwelle) {
-      karte.style.transition = "transform .16s";
-      karte.style.transform = "translateX(-110%)";
-      setTimeout(beiLoeschen, 150);
-    } else zurueck();
-    dx = 0;
-  });
-  kopf.addEventListener("touchcancel", function () { if (aktiv) { aktiv = false; zurueck(); } });
-}
 
 function zeichneRegel(regel, ri) {
   var karte = document.createElement("section"); karte.className = "regel";
@@ -883,9 +824,10 @@ function findeAblegeZiel(x, y) {
   if (!karte) return null;
   // Über dem Abbruch-Feld oder weit weg von der Regel: nichts tun.
   var feld = $("zieh-abbruch");
-  if (feld) {
+  var weitGenug = Math.abs(x - zieht.startX) > 40 || Math.abs(y - zieht.startY) > 40;
+  if (feld && weitGenug) {
     var f = feld.getBoundingClientRect();
-    if (y >= f.top - 12 && y <= f.bottom + 12 && x >= f.left - 24 && x <= f.right + 24) return { modus: "abbruch" };
+    if (y >= f.top - 14 && y <= f.bottom + 14 && x >= f.left - 24 && x <= f.right + 24) return { modus: "abbruch" };
   }
   var kr = karte.getBoundingClientRect();
   if (y < kr.top - 90 || y > kr.bottom + 90) return { modus: "abbruch" };
