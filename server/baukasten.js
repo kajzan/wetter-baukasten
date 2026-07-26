@@ -163,11 +163,20 @@ export function baukastenSeite() {
   #zieh-marke { position:fixed; z-index:61; pointer-events:none; background:var(--akzent); color:#fff;
     font-size:.62rem; font-weight:700; letter-spacing:.09em; padding:2px 7px; border-radius:5px; }
   #zieh-marke.voll { background:var(--rot); }
-  #zieh-abbruch { position:fixed; z-index:62; pointer-events:none; left:50%; bottom:14px;
-    transform:translateX(-50%); background:var(--karte); border:1px solid var(--linie);
-    color:var(--text2); border-radius:999px; padding:8px 16px; font-size:.8rem;
-    box-shadow:0 -3px 14px rgba(0,0,0,.2); white-space:nowrap; }
-  #zieh-abbruch.bereit { background:var(--rot); border-color:var(--rot); color:#fff; }
+  /* Grosse Ablegeflaeche am unteren Rand – liegt durchscheinend ueber der
+     Baustein-Leiste, damit man sie im Ziehen sicher trifft. */
+  #zieh-abbruch { position:fixed; z-index:58; pointer-events:none; left:0; right:0; bottom:0;
+    height:30vh; min-height:160px; max-height:260px;
+    background:linear-gradient(180deg, rgba(185,28,28,.02), rgba(185,28,28,.20));
+    border-top:2px dashed rgba(185,28,28,.45);
+    display:flex; align-items:center; justify-content:center;
+    transition:background .12s, border-color .12s; }
+  #zieh-abbruch .schild { background:rgba(255,255,255,.9); color:var(--rot);
+    border-radius:999px; padding:9px 18px; font-size:.86rem; font-weight:700;
+    box-shadow:0 2px 10px rgba(0,0,0,.18); }
+  #zieh-abbruch.bereit { background:linear-gradient(180deg, rgba(185,28,28,.22), rgba(185,28,28,.42));
+    border-top-color:var(--rot); }
+  #zieh-abbruch.bereit .schild { background:var(--rot); color:#fff; }
 
   /* ---- Satz, Warnung, Treffer ---- */
   .satz { background:var(--akzent-hell); border-radius:9px; padding:6px 9px; margin-top:7px;
@@ -780,7 +789,7 @@ function zeigeGeist() {
   zieht.geist = geist;
   // Rückzieher: hier ablegen (oder Esc) lässt alles, wie es war.
   var abbruch = document.createElement("div"); abbruch.id = "zieh-abbruch";
-  abbruch.innerHTML = '<b>✕</b> Hierher ziehen zum Abbrechen';
+  abbruch.innerHTML = '<span class="schild">✕ Hier loslassen zum Abbrechen</span>';
   document.body.appendChild(abbruch);
   if (quelle.typ === "teil") {
     var reihen = document.querySelectorAll('.regel[data-regel="' + quelle.regelIndex + '"] .baustein[data-baustein="'
@@ -812,10 +821,11 @@ function beiZiehen(e) {
 
 /* Nahe am oberen/unteren Rand mitscrollen, damit man auch weit weg ablegen kann. */
 function rolleAmRand(y) {
-  var oben = y < 80, unten = y > window.innerHeight - 80;
   clearInterval(rollTimer); rollTimer = null;
-  if (!oben && !unten) return;
-  rollTimer = setInterval(function () { window.scrollBy(0, oben ? -12 : 12); }, 16);
+  // Nur nach oben: unten liegt die Abbruchflaeche, dort darf die Seite nicht
+  // unter dem Finger wegrutschen.
+  if (y >= 80) return;
+  rollTimer = setInterval(function () { window.scrollBy(0, -12); }, 16);
 }
 
 /* Welcher Platz liegt unter dem Finger? */
@@ -825,12 +835,9 @@ function findeAblegeZiel(x, y) {
   // Über dem Abbruch-Feld oder weit weg von der Regel: nichts tun.
   var feld = $("zieh-abbruch");
   var weitGenug = Math.abs(x - zieht.startX) > 40 || Math.abs(y - zieht.startY) > 40;
-  if (feld && weitGenug) {
-    var f = feld.getBoundingClientRect();
-    if (y >= f.top - 14 && y <= f.bottom + 14 && x >= f.left - 24 && x <= f.right + 24) return { modus: "abbruch" };
-  }
+  if (feld && weitGenug && y >= feld.getBoundingClientRect().top) return { modus: "abbruch" };
   var kr = karte.getBoundingClientRect();
-  if (y < kr.top - 90 || y > kr.bottom + 90) return { modus: "abbruch" };
+  if (y < kr.top - 90) return { modus: "abbruch" };
   var regel = zieht.quelle.regel;
   var kaesten = Array.prototype.slice.call(karte.querySelectorAll(".baustein"));
   if (!kaesten.length) return { modus: "und", vorBaustein: null };
