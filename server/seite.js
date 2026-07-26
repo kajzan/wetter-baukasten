@@ -89,11 +89,11 @@ export function appSeite(vapidPublic) {
   .untertitel { color:var(--text2); font-size:.85rem; margin:0 2px 14px; }
   .karte { background:var(--karte); border:1px solid var(--linie); border-radius:14px; padding:14px; margin-bottom:14px; }
   input[type=text] { width:100%; padding:11px 12px; border:1px solid var(--linie);
-    border-radius:10px; background:var(--hg); color:var(--text); font-size:16px; }
+    border-radius:10px; background:var(--hg); color:var(--text); font-size:max(16px,1rem); }
   input[type=number] { width:100%; padding:7px 8px; border:1px solid var(--linie);
-    border-radius:8px; background:var(--hg); color:var(--text); font-size:16px; text-align:right; }
+    border-radius:8px; background:var(--hg); color:var(--text); font-size:max(16px,1rem); text-align:right; }
   select { width:100%; padding:9px 10px; border:1px solid var(--linie); border-radius:8px;
-    background:var(--hg); color:var(--text); font-size:16px; }
+    background:var(--hg); color:var(--text); font-size:max(16px,1rem); }
   label { font-size:.82rem; color:var(--text2); display:block; margin-bottom:2px; }
   .knopf { display:inline-block; border:0; border-radius:10px; cursor:pointer;
     padding:12px 16px; font-size:.95rem; font-weight:600; background:var(--akzent); color:#fff; }
@@ -112,6 +112,13 @@ export function appSeite(vapidPublic) {
     display:flex; align-items:center; justify-content:center; line-height:1; }
   .info-feld[open] .i-kreis { background:var(--akzent); color:#fff; }
   .info-feld > p { margin:0 0 12px; }
+  /* Schriftgrößen-Wahl (Einstellungen) */
+  .groessen { display:flex; gap:6px; }
+  .groessen button { flex:1; border:1px solid var(--linie); background:var(--hg); color:var(--text);
+    border-radius:9px; padding:9px 4px; cursor:pointer; line-height:1.2; }
+  .groessen button.an { background:var(--akzent); color:#fff; border-color:var(--akzent); }
+  .groessen button .a { display:block; font-weight:700; }
+  .groessen button .b { display:block; font-size:.7rem; opacity:.8; }
   .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:8px 10px; font-size:.86rem; margin-top:8px; }
   .erfolg { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:8px 10px; font-size:.86rem; margin-top:8px; font-weight:600; }
 
@@ -285,6 +292,12 @@ export function appSeite(vapidPublic) {
       <div id="push-status"></div>
     </section>
     <section class="karte">
+      <h2>Darstellung</h2>
+      <label>Schriftgröße</label>
+      <div class="groessen" id="schrift-wahl"></div>
+      <p class="hinweis" style="margin:8px 0 0">Gilt für die ganze App. Wird auf diesem Gerät gespeichert.</p>
+    </section>
+    <section class="karte">
       <h2>Daten</h2>
       <p class="hinweis">Alles im Browser Gespeicherte löschen und dieses Gerät vom Wächter abmelden.</p>
       <button class="knopf rot" id="loeschen" style="padding:9px 13px;font-size:.85rem">Alles löschen</button>
@@ -354,9 +367,33 @@ var VORLAGEN = [
 ];
 
 var SPEICHER = "wetterWaechterApp_v2";
-var zustand = { ort:null, regeln:[], aktiviert:false, willkommenGesehen:false, nudgeWeg:false };
+var zustand = { ort:null, regeln:[], aktiviert:false, willkommenGesehen:false, nudgeWeg:false, schrift:16 };
 try { var roh = localStorage.getItem(SPEICHER); if (roh) { var g = JSON.parse(roh); if (g && typeof g === "object") zustand = Object.assign(zustand, g); } } catch (e) {}
 if (!Array.isArray(zustand.regeln)) zustand.regeln = [];
+
+/* Schriftgröße: skaliert die ganze App über die Grundschrift. Eingabefelder
+   bleiben mindestens 16 px, sonst zoomt iPhone/iPad beim Antippen hinein. */
+var SCHRIFTGROESSEN = [[15, "Klein"], [16, "Normal"], [18, "Groß"], [21, "Sehr groß"]];
+function wendeSchriftAn() {
+  var px = Number(zustand.schrift);
+  if (!SCHRIFTGROESSEN.some(function (g) { return g[0] === px; })) px = 16;
+  document.documentElement.style.fontSize = px + "px";
+}
+wendeSchriftAn();
+function zeichneSchriftwahl() {
+  var ziel = $("schrift-wahl"); if (!ziel) return;
+  ziel.innerHTML = "";
+  SCHRIFTGROESSEN.forEach(function (g) {
+    var knopf = document.createElement("button"); knopf.type = "button";
+    if (Number(zustand.schrift) === g[0]) knopf.className = "an";
+    knopf.innerHTML = '<span class="a" style="font-size:' + g[0] + 'px">Aa</span>'
+      + '<span class="b">' + g[1] + '</span>';
+    knopf.addEventListener("click", function () {
+      zustand.schrift = g[0]; speichere(); wendeSchriftAn(); zeichneSchriftwahl();
+    });
+    ziel.appendChild(knopf);
+  });
+}
 
 function speichere() { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); }
 function runde(w) { return Math.round(parseFloat(w) * 10) / 10; }
@@ -1190,7 +1227,7 @@ function zeichneNudge() {
 
 /* ---------- Start ---------- */
 $("push-schalter").checked = !!zustand.aktiviert;
-zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); aktualisiereVorschau();
+zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); zeichneSchriftwahl(); aktualisiereVorschau();
 setzeHintergrund(); setInterval(setzeHintergrund, 5 * 60 * 1000);
 if (!zustand.willkommenGesehen) zeigeWillkommen();
 </script>

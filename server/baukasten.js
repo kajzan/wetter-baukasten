@@ -115,6 +115,9 @@ export function baukastenSeite() {
     border-radius:999px; padding:5px 10px; font-size:.83rem; cursor:pointer; }
   .auswahl button:hover { border-color:var(--akzent); color:var(--akzent); }
   .auswahl.vorlagen button { border-style:solid; background:var(--karte); }
+  /* Schon verwendet: nur leicht zurückgenommen, weiterhin anklickbar */
+  .auswahl button.benutzt { opacity:.55; }
+  .auswahl button.benutzt::after { content:" ✓"; font-weight:700; }
 
   /* ---- Satz, Warnung, Treffer ---- */
   .satz { background:var(--akzent-hell); border-radius:9px; padding:6px 9px; margin-top:7px;
@@ -141,28 +144,29 @@ export function baukastenSeite() {
     <div id="ort-zeile"></div>
   </section>
 
+  <div id="regeln"></div>
+
   <section class="karte">
+    <h2>Wunsch hinzufügen</h2>
+    <div class="auswahl vorlagen" id="vorlagen"></div>
+    <button class="knopf zart" id="neue-regel" style="width:100%;margin-top:8px">+ Leerer Wunsch</button>
+  </section>
+
+  <section class="karte">
+    <h2>So funktioniert es</h2>
+    <p class="hinweis" style="margin:0">Jeder <b>Baustein</b> ist eine Bedingung. <b>Alle</b> Bausteine müssen
+    passen. Mit „+ oder“ legst du eine Alternative in denselben Baustein – dann reicht <b>eine</b> der Zeilen.
+    Unten steht immer als Satz, was du gerade gebaut hast, und wie oft es wirklich zutrifft.</p>
+  </section>
+
+  <section class="karte">
+    <h2>Einstellungen</h2>
     <div class="schalter-zeile">
       <span class="txt">Erweiterte Regeln (und/oder)</span>
       <label class="schalter"><input type="checkbox" id="erweitert-schalter"><span class="bahn"></span></label>
     </div>
     <p class="hinweis" id="erweitert-erklaerung" style="margin:6px 0 0"></p>
-  </section>
-
-  <section class="karte">
-    <h2>Vorlage hinzufügen</h2>
-    <div class="auswahl vorlagen" id="vorlagen"></div>
-  </section>
-
-  <div id="regeln"></div>
-
-  <button class="knopf zart" id="neue-regel" style="width:100%">+ Leeren Wunsch anlegen</button>
-
-  <section class="karte" style="margin-top:10px">
-    <h2>So funktioniert es</h2>
-    <p class="hinweis" style="margin:0">Jeder <b>Baustein</b> ist eine Bedingung. <b>Alle</b> Bausteine müssen
-    passen. Mit „+ oder“ legst du eine Alternative in denselben Baustein – dann reicht <b>eine</b> der Zeilen.
-    Unten steht immer als Satz, was du gerade gebaut hast, und wie oft es wirklich zutrifft.</p>
+    <p class="hinweis" style="margin:8px 0 0">In der App landet dieser Schalter später unter „Einstellungen“.</p>
   </section>
 </main>
 
@@ -257,22 +261,59 @@ function teilSatz(teil) {
   }
   var e = art.einheit ? " " + art.einheit : "";
   if (teil.art === "regen" && teil.max === 0 && teil.min === undefined) return "kein Regen";
-  if (teil.min !== undefined && teil.max !== undefined)
+  if (teil.min !== undefined && teil.max !== undefined) {
+    if (teil.min > teil.max)   // widersprüchlich – nicht als Bereich schönschreiben
+      return art.bez + " mindestens " + zahlText(teil.min) + " und höchstens " + zahlText(teil.max) + e;
     return art.bez + " " + zahlText(teil.min) + "–" + zahlText(teil.max) + e;
+  }
   if (teil.min !== undefined) return art.bez + " mindestens " + zahlText(teil.min) + e;
   if (teil.max !== undefined) return art.bez + " höchstens " + zahlText(teil.max) + e;
   return art.bez + " egal";
 }
+
+/* Mehrere Bausteine derselben Art sind mit „und“ verknüpft – wirksam ist also
+   nur ihre Überschneidung. Genau die zeigen wir im Satz, damit dort steht, was
+   wirklich auslöst (10–20 und 15–25 ergibt 15–20). */
+function vereinfacheBausteine(bausteine) {
+  var liste = [], stelle = {};
+  (bausteine || []).forEach(function (b) {
+    var teile = b.teile || [];
+    if (!teile.length) return;
+    if (teile.length > 1) { liste.push({ oder: teile }); return; }
+    var t = teile[0];
+    if (stelle[t.art] === undefined) {
+      stelle[t.art] = liste.length;
+      liste.push({ einzel: JSON.parse(JSON.stringify(t)), zusammengefasst: false });
+      return;
+    }
+    var eintrag = liste[stelle[t.art]], e = eintrag.einzel;
+    if (t.art === "windrichtung") {
+      var vorhanden = e.sektoren || [], neu = t.sektoren || [];
+      e.sektoren = vorhanden.filter(function (x) { return neu.indexOf(x) >= 0; });
+    } else {
+      if (t.min !== undefined) e.min = e.min === undefined ? t.min : Math.max(e.min, t.min);
+      if (t.max !== undefined) e.max = e.max === undefined ? t.max : Math.min(e.max, t.max);
+    }
+    eintrag.zusammengefasst = true;
+  });
+  return liste;
+}
+
 function regelSatz(regel) {
-  var voll = (regel.bausteine || []).filter(function (b) { return b.teile && b.teile.length; });
-  if (!voll.length) return "<b>Passt immer</b> – noch kein Baustein gewählt.";
-  var stuecke = voll.map(function (b) {
-    var s = b.teile.map(teilSatz);
-    return s.length > 1 ? "(" + s.join(" <b>oder</b> ") + ")" : s[0];
+  var liste = vereinfacheBausteine(regel.bausteine);
+  if (!liste.length) return "<b>Passt immer</b> – noch kein Baustein gewählt.";
+  var zusammengefasst = false;
+  var stuecke = liste.map(function (eintrag) {
+    if (eintrag.oder) return "(" + eintrag.oder.map(teilSatz).join(" <b>oder</b> ") + ")";
+    if (eintrag.zusammengefasst) zusammengefasst = true;
+    return teilSatz(eintrag.einzel);
   });
   var zeit = " Geprüft wird " + (regel.nurVonUhr || 0) + "–" + (regel.nurBisUhr != null ? regel.nurBisUhr : 24)
     + " Uhr, mindestens " + (regel.mindestdauerStunden || 2) + " Stunden am Stück.";
-  return "<b>Passt, wenn:</b> " + stuecke.join(" <b>und</b> ") + "." + zeit;
+  var fuss = zusammengefasst
+    ? '<br><span class="hinweis">Mehrere Bausteine derselben Art sind zur wirksamen Überschneidung zusammengefasst.</span>'
+    : "";
+  return "<b>Passt, wenn:</b> " + stuecke.join(" <b>und</b> ") + "." + zeit + fuss;
 }
 
 /* ---------- Unerfüllbare Regeln erkennen ----------
@@ -335,13 +376,22 @@ $("erweitert-schalter").addEventListener("change", function () {
 
 function zeichneVorlagen() {
   var ziel = $("vorlagen"); ziel.innerHTML = "";
+  var schonDa = regeln.map(function (r) { return r.name; });
   VORLAGEN.forEach(function (v) {
     if (!erweitert && v.bausteine.some(function (b) { return b.teile.length > 1; })) return;
     var knopf = document.createElement("button"); knopf.type = "button";
     knopf.textContent = v.emoji + " " + v.name;
+    if (schonDa.indexOf(v.name) >= 0) knopf.className = "benutzt";  // leicht zurückgenommen, bleibt klickbar
     knopf.addEventListener("click", function () { regeln.push(ausVorlage(v)); speichere(); zeichneAlles(); });
     ziel.appendChild(knopf);
   });
+}
+
+/* Welche Bausteinarten kommen in dieser Regel / diesem Baustein schon vor? */
+function benutzteArten(quelle) {
+  var arten = {};
+  (quelle || []).forEach(function (b) { (b.teile || []).forEach(function (t) { arten[t.art] = true; }); });
+  return arten;
 }
 
 function zeichneRegeln() {
@@ -531,10 +581,16 @@ function zeigeArtWahl(ziel) {
     + '<p class="hinweis" style="margin:0 0 8px">' + (alternative
         ? "Danach genügt <b>eine</b> der Zeilen in diesem Baustein."
         : "Der neue Baustein muss <b>zusätzlich</b> passen.") + '</p>';
+  // Bei „+ oder“ zählt der eine Baustein, bei „+ Baustein“ die ganze Regel.
+  var benutzt = benutzteArten(alternative ? [ziel.baustein] : ziel.regel.bausteine);
   var auswahl = document.createElement("div"); auswahl.className = "auswahl";
   ARTEN_REIHE.forEach(function (art) {
     var knopf = document.createElement("button"); knopf.type = "button";
     knopf.textContent = ARTEN[art].emoji + " " + ARTEN[art].bez;
+    if (benutzt[art]) {
+      knopf.className = "benutzt";
+      knopf.title = "Diese Art ist hier schon im Einsatz – geht trotzdem.";
+    }
     knopf.addEventListener("click", function () {
       if (alternative) ziel.baustein.teile.push(neuerTeil(art));
       else ziel.regel.bausteine = (ziel.regel.bausteine || []).concat([{ teile: [neuerTeil(art)] }]);
