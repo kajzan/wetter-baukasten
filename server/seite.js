@@ -9,6 +9,8 @@
  * weil die ganze Seite in einem Template-Literal steckt.
  */
 
+import { BAUSTEINE_CSS, BAUSTEINE_JS } from "./bausteine_ui.js";
+
 export function appSeite(vapidPublic) {
   return `<!DOCTYPE html>
 <html lang="de">
@@ -112,6 +114,10 @@ export function appSeite(vapidPublic) {
     display:flex; align-items:center; justify-content:center; line-height:1; }
   .info-feld[open] .i-kreis { background:var(--akzent); color:#fff; }
   .info-feld > p { margin:0 0 12px; }
+  .modus-aus { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:var(--akzent-hell); border:1px solid var(--akzent); border-radius:12px;
+    padding:10px 12px; margin-bottom:14px; font-size:.84rem; }
+  .modus-aus > div { flex:1; min-width:170px; }
   /* Schriftgrößen-Wahl (Einstellungen) */
   .groessen { display:flex; gap:6px; }
   .groessen button { flex:1; border:1px solid var(--linie); background:var(--hg); color:var(--text);
@@ -170,15 +176,7 @@ export function appSeite(vapidPublic) {
   .kein-treffer { color:var(--text2); font-size:.84rem; margin-top:7px; }
   details.fein summary { cursor:pointer; font-size:.84rem; color:var(--akzent); padding:6px 0 2px; }
   .zeile { display:flex; gap:8px; margin-top:8px; } .zeile > div { flex:1; min-width:0; }
-  .bedingung { display:grid; grid-template-columns:30px 1fr 78px; gap:7px; align-items:center; padding:6px 0; border-top:1px solid var(--linie); }
-  .bedingung .bez { font-size:.83rem; } .bedingung .bez small { color:var(--text2); }
-  .bedingung input[type=checkbox] { width:19px; height:19px; accent-color:var(--akzent); }
-  .bedingung input[type=range] { width:100%; accent-color:var(--akzent); grid-column:2; }
-  .bedingung.aus input[type=range], .bedingung.aus input[type=number] { opacity:.35; pointer-events:none; }
-  .sektoren { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
-  .sektoren button { border:1px solid var(--linie); background:var(--hg); color:var(--text);
-    border-radius:8px; padding:7px 4px; font-size:.82rem; cursor:pointer; }
-  .sektoren button.an { background:var(--akzent); color:#fff; border-color:var(--akzent); }
+${BAUSTEINE_CSS}
 
   /* Schalter */
   .schalter { position:relative; width:46px; height:26px; flex-shrink:0; }
@@ -235,9 +233,10 @@ export function appSeite(vapidPublic) {
   <!-- ===== Wünsche ===== -->
   <section id="reiter-wuensche" class="reiter sichtbar">
     <div id="nudge"></div>
+    <div id="modus-hinweis"></div>
     <section class="karte">
       <h2>Deine Wetter-Wünsche</h2>
-      <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Regel nach links wischen zum Löschen.</p>
+      <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Unter „Feinjustieren“ baust du sie aus Bausteinen.</p>
       <div class="vorlagen" id="vorlagen"></div>
       <div id="regel-liste"></div>
     </section>
@@ -292,6 +291,14 @@ export function appSeite(vapidPublic) {
       <div id="push-status"></div>
     </section>
     <section class="karte">
+      <h2>Regeln</h2>
+      <div class="schalter-zeile">
+        <span class="txt">Erweiterte Regeln (und/oder)</span>
+        <label class="schalter"><input type="checkbox" id="erweitert-schalter"><span class="bahn"></span></label>
+      </div>
+      <p class="hinweis" id="erweitert-erklaerung" style="margin-top:8px"></p>
+    </section>
+    <section class="karte">
       <h2>Darstellung</h2>
       <label>Schriftgröße</label>
       <div class="groessen" id="schrift-wahl"></div>
@@ -306,8 +313,10 @@ export function appSeite(vapidPublic) {
       <details><summary style="cursor:pointer;font-weight:700;font-size:1.02rem">Was diese App kann</summary>
         <ul style="font-size:.88rem;padding-left:20px;margin:10px 0 0">
           <li><b>Ort wählen</b> – per Suche, über 📍 dein Standort oder direkt auf der Karte. Gespeichert wird immer nur eine gerundete Position (~11 km).</li>
-          <li><b>Wünsche anlegen</b> – Vorlage antippen (Pizzatag, Wäschetag, Sturm-Warnung …) oder eine eigene Regel mit eigenem Emoji bauen. Zum Löschen die Regel nach links wischen.</li>
-          <li><b>Bedingungen</b> – Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte und UV, jeweils als Mindest- und/oder Höchstwert.</li>
+          <li><b>Wünsche anlegen</b> – Vorlage antippen (Pizzatag, Wäschetag, Sturm-Warnung …) oder eine eigene Regel mit eigenem Emoji bauen. Zum Löschen die Regel weit nach links wischen.</li>
+          <li><b>Bausteine</b> – Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte und UV, jeweils als Mindest- und/oder Höchstwert. <b>Alle</b> Bausteine müssen passen.</li>
+          <li><b>„oder“ kombinieren</b> – mit „+ oder“ legst du eine Alternative in denselben Baustein, dann genügt <b>eine</b> der Zeilen. So geht z. B. „wenig Wind <i>oder</i> Wind aus Norden“. Bausteine lassen sich auch mit dem Finger ziehen: auf einen Baustein = oder, dazwischen = und. Abschalten in den Einstellungen unter „Erweiterte Regeln“.</li>
+          <li><b>Klartext-Kontrolle</b> – unter jeder Regel steht als Satz, was wirklich auslöst; widersprüchliche Regeln werden gemeldet.</li>
           <li><b>Zeit festlegen</b> – Vorschau-Fenster von 1 bis 7 Tagen, erlaubte Uhrzeiten und wie lange das Wetter am Stück passen muss.</li>
           <li><b>Benachrichtigung pro Regel</b> – einmal am Tag oder stündlich (z. B. für Sturm-Warnungen).</li>
           <li><b>Wetter ansehen</b> – 7 Tage mit Stundenwerten. Über die Diagramme streichen zeigt die Werte einzelner Stunden; ein Tipp auf das Temperatur-Diagramm vergrößert es.</li>
@@ -334,42 +343,57 @@ export function appSeite(vapidPublic) {
 "use strict";
 var VAPID_PUBLIC = "${vapidPublic}";
 
-var BAUSTEINE = [
-  { s:"tempMin",       bez:"Temperatur mindestens", einheit:"°C",   min:-20, max:45,  schritt:1 },
-  { s:"tempMax",       bez:"Temperatur höchstens",  einheit:"°C",   min:-20, max:45,  schritt:1 },
-  { s:"windMin",       bez:"Wind mindestens",       einheit:"km/h", min:0,   max:120, schritt:1 },
-  { s:"windMax",       bez:"Wind höchstens",        einheit:"km/h", min:0,   max:120, schritt:1 },
-  { s:"boeMin",        bez:"Windböen mindestens",   einheit:"km/h", min:0,   max:150, schritt:1 },
-  { s:"boeMax",        bez:"Windböen höchstens",    einheit:"km/h", min:0,   max:150, schritt:1 },
-  { s:"regenMax",      bez:"Regen höchstens",       einheit:"mm/h", min:0,   max:10,  schritt:0.1 },
-  { s:"bewoelkungMin", bez:"Bewölkung mindestens",  einheit:"%",    min:0,   max:100, schritt:5 },
-  { s:"bewoelkungMax", bez:"Bewölkung höchstens",   einheit:"%",    min:0,   max:100, schritt:5 },
-  { s:"feuchteMax",    bez:"Luftfeuchte höchstens", einheit:"%",    min:0,   max:100, schritt:5 },
-  { s:"uvMin",         bez:"UV-Index mindestens",   einheit:"UV",   min:0,   max:12,  schritt:1 },
-  { s:"uvMax",         bez:"UV-Index höchstens",    einheit:"UV",   min:0,   max:12,  schritt:1 }
-];
-var STANDARDWERT = { tempMin:15, tempMax:25, windMin:5, windMax:20, boeMin:20, boeMax:60, regenMax:0,
-  bewoelkungMin:20, bewoelkungMax:80, feuchteMax:70, uvMin:3, uvMax:6 };
-var SEKTOREN = ["N","NO","O","SO","S","SW","W","NW"];
-var PFEIL_VON = ["↓","↙","←","↖","↑","↗","→","↘"];
 var FENSTER_OPTIONEN = [ [24,"1 Tag"], [48,"2 Tage"], [72,"3 Tage"], [120,"5 Tage"], [168,"7 Tage"] ];
 var EMOJI_AUSWAHL = ["🍕","🌱","🧺","🏃","🔥","🧴","⛈️","☀️","🌤️","⛅","☁️","🌧️","❄️","🌈","💨","🌊",
   "🏖️","⛱️","🚴","🥾","🎣","⛳","🎿","🏂","🏕️","🌻","🍄","🐝","🦋","📸","🚗","✈️","🍺","☕","🧗","🏊",
   "🛶","🪁","🌙","⭐","🌡️","💧","🌪️","🌫️","🍇","🐟","🎪","🎈"];
+function VB(art, min, max) {
+  var t = { art: art };
+  if (min !== null && min !== undefined) t.min = min;
+  if (max !== null && max !== undefined) t.max = max;
+  return { teile: [t] };
+}
 var VORLAGEN = [
-  { name:"Pizzatag", emoji:"🍕", nurVonUhr:11, nurBisUhr:21, mindestdauerStunden:3, bedingungen:{ tempMin:18, tempMax:28, windMax:10, regenMax:0 } },
-  { name:"Pflanztag", emoji:"🌱", nurVonUhr:8, nurBisUhr:20, mindestdauerStunden:4, bedingungen:{ tempMin:15, tempMax:24, bewoelkungMin:30, bewoelkungMax:70, regenMax:0.2 } },
-  { name:"Wäschetag", emoji:"🧺", nurVonUhr:9, nurBisUhr:19, mindestdauerStunden:4, bedingungen:{ tempMin:15, windMin:5, windMax:30, regenMax:0, feuchteMax:65 } },
-  { name:"Lauf-Wetter", emoji:"🏃", nurVonUhr:6, nurBisUhr:21, mindestdauerStunden:1, bedingungen:{ tempMin:5, tempMax:20, windMax:20, regenMax:0.2 } },
-  { name:"Fahrrad-Wetter", emoji:"🚲", nurVonUhr:6, nurBisUhr:20, mindestdauerStunden:1, bedingungen:{ tempMin:8, tempMax:28, windMax:20, boeMax:35, regenMax:0.1 } },
-  { name:"Sonnencreme", emoji:"🧴", nurVonUhr:9, nurBisUhr:18, mindestdauerStunden:2, bedingungen:{ uvMin:6 } },
-  { name:"Sturm-Warnung", emoji:"⛈️", nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1, haeufigkeit:"stuendlich", bedingungen:{ windMin:60 } }
+  { name:"Pizza am Balkon", emoji:"🍕", nurVonUhr:11, nurBisUhr:22, mindestdauerStunden:2,
+    bausteine:[ VB("temp",18,28), VB("regen",null,0),
+                { teile:[{ art:"wind", max:10 }, { art:"windrichtung", sektoren:["N","NO","NW"] }] } ] },
+  { name:"Pizzatag", emoji:"🍕", nurVonUhr:11, nurBisUhr:21, mindestdauerStunden:3,
+    bausteine:[ VB("temp",18,28), VB("wind",null,10), VB("regen",null,0) ] },
+  { name:"Pflanztag", emoji:"🌱", nurVonUhr:8, nurBisUhr:20, mindestdauerStunden:4,
+    bausteine:[ VB("temp",15,24), VB("bewoelkung",30,70), VB("regen",null,0.2) ] },
+  { name:"Wäschetag", emoji:"🧺", nurVonUhr:9, nurBisUhr:19, mindestdauerStunden:4,
+    bausteine:[ VB("temp",15,null), VB("wind",5,30), VB("regen",null,0), VB("feuchte",null,65) ] },
+  { name:"Lauf-Wetter", emoji:"🏃", nurVonUhr:6, nurBisUhr:21, mindestdauerStunden:1,
+    bausteine:[ VB("temp",5,20), VB("wind",null,20), VB("regen",null,0.2) ] },
+  { name:"Fahrrad-Wetter", emoji:"🚲", nurVonUhr:6, nurBisUhr:20, mindestdauerStunden:1,
+    bausteine:[ VB("temp",8,28), VB("wind",null,20), VB("boe",null,35), VB("regen",null,0.1) ] },
+  { name:"Sonnencreme", emoji:"🧴", nurVonUhr:9, nurBisUhr:18, mindestdauerStunden:2,
+    bausteine:[ VB("uv",6,null) ] },
+  { name:"Sturm-Warnung", emoji:"⛈️", nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1, haeufigkeit:"stuendlich",
+    bausteine:[ { teile:[{ art:"wind", min:60 }, { art:"boe", min:90 }] } ] }
 ];
 
 var SPEICHER = "wetterWaechterApp_v2";
-var zustand = { ort:null, regeln:[], aktiviert:false, willkommenGesehen:false, nudgeWeg:false, schrift:16 };
+var zustand = { ort:null, regeln:[], aktiviert:false, willkommenGesehen:false, nudgeWeg:false,
+                schrift:16, erweitert:true };
 try { var roh = localStorage.getItem(SPEICHER); if (roh) { var g = JSON.parse(roh); if (g && typeof g === "object") zustand = Object.assign(zustand, g); } } catch (e) {}
 if (!Array.isArray(zustand.regeln)) zustand.regeln = [];
+
+/* Der Baustein-Editor arbeitet auf regel.bausteine. Regeln aus der alten
+   Fassung werden beim ersten Öffnen einmalig umgewandelt – verlustfrei, jede
+   bisherige Bedingung wird ein Baustein ohne Alternative. Die alten
+   bedingungen bleiben als Rückfallebene stehen. */
+var erweitert = zustand.erweitert !== false;
+var regeln = zustand.regeln;
+function migriereRegeln() {
+  var geaendert = false;
+  zustand.regeln.forEach(function (r) {
+    if (Array.isArray(r.bausteine) && r.bausteine.length) return;
+    r.bausteine = bausteineAusAltForm(r.bedingungen);
+    geaendert = true;
+  });
+  if (geaendert) speichere();
+}
 
 /* Schriftgröße: skaliert die ganze App über die Grundschrift. Eingabefelder
    bleiben mindestens 16 px, sonst zoomt iPhone/iPad beim Antippen hinein. */
@@ -399,7 +423,7 @@ function speichere() { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); 
 function runde(w) { return Math.round(parseFloat(w) * 10) / 10; }
 function $(id) { return document.getElementById(id); }
 function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-var letzteTreffer = null, letzteTage = [], letzteStunden = null, offeneTage = {};
+var letzteTreffer = null, letzteTage = [], letzteStunden = null, offeneTage = {}, offeneEditoren = {};
 var letzteSonne = null, letzteVersatz = 0;
 
 /* Reiter */
@@ -683,7 +707,7 @@ function zeichneVorlagen() {
       zustand.regeln.push({ name:v.name, emoji:v.emoji, aktiv:true, zeitfensterStunden:48,
         nurVonUhr:v.nurVonUhr, nurBisUhr:v.nurBisUhr, mindestdauerStunden:v.mindestdauerStunden,
         haeufigkeit:v.haeufigkeit || "taeglich",
-        bedingungen:JSON.parse(JSON.stringify(v.bedingungen)) });
+        bausteine:JSON.parse(JSON.stringify(v.bausteine)), bedingungen:{} });
       speichere(); zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
     });
     ziel.appendChild(knopf);
@@ -717,7 +741,8 @@ function zeigeEigeneRegelDialog() {
   $("er-ok").addEventListener("click", function () {
     var name = ($("er-name").value || "").trim() || "Eigene Regel";
     zustand.regeln.push({ name:name, emoji:(gewaehlt || "⭐"), aktiv:true, zeitfensterStunden:48,
-      nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:2, bedingungen:{ tempMin:15 } });
+      nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:2, bedingungen:{},
+      bausteine:[{ teile:[{ art:"temp", min:15, max:25 }] }] });
     $("modal-ziel").innerHTML = "";
     speichere(); zeichneRegeln(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
     var karten = document.querySelectorAll("#regel-liste details.fein");
@@ -734,6 +759,7 @@ function zeichneRegeln() {
     huelle.innerHTML = '<div class="loeschbg">🗑️ Löschen</div>';
     var karte = document.createElement("div");
     karte.className = "regel" + (regel.aktiv ? "" : " inaktiv");
+    karte.dataset.regelkarte = i;     // Ablegeziel-Suche beim Ziehen (data-regel gehört dem Treffer-Feld)
     var kopf = document.createElement("div"); kopf.className = "regelkopf";
     kopf.innerHTML = '<span class="emoji">' + sicher(regel.emoji) + '</span>'
       + '<span class="name">' + sicher(regel.name) + '</span>'
@@ -751,16 +777,25 @@ function zeichneRegeln() {
   });
 }
 function entferneRegel(i) {
+  offeneEditoren = {};                 // Indizes verschieben sich
   zustand.regeln.splice(i, 1); speichere(); zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
 }
 function macheWischbar(el, onDelete) {
-  var startX = 0, startY = 0, dx = 0, aktiv = false;
+  var startX = 0, startY = 0, dx = 0, aktiv = false, schwelle = 130;
   /* Der rote „Löschen“-Grund wird nur während des Wischens gezeigt – sonst
      schimmerte er durch die durchsichtigen Glas-Karten hindurch. */
   var huelle = function () { return el.parentNode; };
+  /* Bedienelemente in der Karte (Regler, Chips, Anfasser, Windrichtung …)
+     dürfen kein Löschen auslösen – sonst kollidiert jede waagerechte Geste
+     mit dem Wischen. */
+  var BEDIENT = "input,select,button,label,.griff,.p-chip,.palette,.sektoren";
   el.addEventListener("touchstart", function (e) {
     if (e.touches.length !== 1) return;
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; aktiv = true; el.style.transition = "";
+    if (e.target.closest && e.target.closest(BEDIENT)) { aktiv = false; return; }
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; aktiv = true;
+    // Bewusst schwergängig: erst ab der halben Kartenbreite wird gelöscht.
+    schwelle = Math.max(130, el.getBoundingClientRect().width * 0.5);
+    el.style.transition = "";
   }, { passive: true });
   el.addEventListener("touchmove", function (e) {
     if (!aktiv) return;
@@ -772,7 +807,7 @@ function macheWischbar(el, onDelete) {
   }, { passive: true });
   el.addEventListener("touchend", function () {
     if (!aktiv) return; aktiv = false; el.style.transition = "transform .15s";
-    if (dx < -90) { el.style.transform = "translateX(-100%)"; setTimeout(onDelete, 130); }
+    if (dx < -schwelle) { el.style.transform = "translateX(-100%)"; setTimeout(onDelete, 130); }
     else { el.style.transform = "translateX(0)"; huelle().classList.remove("wischt"); }
     dx = 0;
   });
@@ -790,6 +825,10 @@ function fensterText(h) { for (var k = 0; k < FENSTER_OPTIONEN.length; k++) if (
 function feinEditor(regel, i) {
   var det = document.createElement("details");
   det.className = "fein"; det.innerHTML = "<summary>Feinjustieren</summary>";
+  /* Nach jeder Änderung werden die Regeln neu aufgebaut. Ohne dieses Gedächtnis
+     klappte der Editor dabei jedes Mal zu – mitten im Bauen einer Regel. */
+  det.open = !!offeneEditoren[i];
+  det.addEventListener("toggle", function () { offeneEditoren[i] = det.open; });
   var np = document.createElement("div"); np.className = "zeile";
   np.innerHTML = '<div style="flex:2"><label>Name</label><input type="text" value="' + sicher(regel.name) + '" data-f="name"></div>'
     + '<div><label>Symbol</label><input type="text" maxlength="4" value="' + sicher(regel.emoji) + '" data-f="emoji" style="text-align:center"></div>';
@@ -823,47 +862,8 @@ function feinEditor(regel, i) {
   });
   det.appendChild(zeit);
 
-  BAUSTEINE.forEach(function (b) {
-    var gesetzt = regel.bedingungen[b.s] !== undefined;
-    var wert = gesetzt ? regel.bedingungen[b.s] : STANDARDWERT[b.s];
-    var reihe = document.createElement("div");
-    reihe.className = "bedingung" + (gesetzt ? "" : " aus");
-    reihe.innerHTML = '<input type="checkbox"' + (gesetzt ? " checked" : "") + '>'
-      + '<span class="bez">' + b.bez + ' <small>(' + b.einheit + ')</small></span>'
-      + '<input type="number" min="' + b.min + '" max="' + b.max + '" step="' + b.schritt + '" value="' + wert + '">'
-      + '<input type="range" min="' + b.min + '" max="' + b.max + '" step="' + b.schritt + '" value="' + wert + '">';
-    var haken = reihe.querySelector("input[type=checkbox]");
-    var zahl = reihe.querySelector("input[type=number]");
-    var regler = reihe.querySelector("input[type=range]");
-    haken.addEventListener("change", function () {
-      if (this.checked) { regel.bedingungen[b.s] = parseFloat(zahl.value); reihe.classList.remove("aus"); }
-      else { delete regel.bedingungen[b.s]; reihe.classList.add("aus"); }
-      speichere(); aktualisiereVorschau(); syncWennAktiv();
-    });
-    function uebernehme(w) { var z = parseFloat(w); if (!isNaN(z) && regel.bedingungen[b.s] !== undefined) { regel.bedingungen[b.s] = z; speichere(); aktualisiereVorschauLangsam(); syncWennAktiv(); } }
-    regler.addEventListener("input", function () { zahl.value = this.value; uebernehme(this.value); });
-    zahl.addEventListener("change", function () { regler.value = this.value; uebernehme(this.value); });
-    det.appendChild(reihe);
-  });
-
-  var wr = document.createElement("div");
-  wr.innerHTML = '<label style="margin-top:10px">Windrichtung – nur bei Wind aus:</label>';
-  var gitter = document.createElement("div"); gitter.className = "sektoren";
-  SEKTOREN.forEach(function (sekt, si) {
-    var knopf = document.createElement("button");
-    var an = Array.isArray(regel.bedingungen.windRichtungen) && regel.bedingungen.windRichtungen.indexOf(sekt) >= 0;
-    if (an) knopf.className = "an"; knopf.textContent = PFEIL_VON[si] + " " + sekt;
-    knopf.addEventListener("click", function () {
-      var liste = Array.isArray(regel.bedingungen.windRichtungen) ? regel.bedingungen.windRichtungen.slice() : [];
-      var pos = liste.indexOf(sekt); if (pos >= 0) liste.splice(pos, 1); else liste.push(sekt);
-      if (liste.length) regel.bedingungen.windRichtungen = liste; else delete regel.bedingungen.windRichtungen;
-      knopf.classList.toggle("an"); speichere(); aktualisiereVorschau(); syncWennAktiv();
-    });
-    gitter.appendChild(knopf);
-  });
-  wr.appendChild(gitter);
-  var h = document.createElement("p"); h.className = "hinweis"; h.style.marginTop = "4px"; h.textContent = "Nichts gewählt = Windrichtung egal.";
-  wr.appendChild(h); det.appendChild(wr);
+  baueBausteinBereich(det, regel, i);
+  baueSatzUndWarnung(det, regel);
 
   var entf = document.createElement("div"); entf.style.marginTop = "10px";
   entf.innerHTML = '<button class="knopf rot" style="padding:7px 11px;font-size:.8rem">🗑️ Regel entfernen</button>';
@@ -872,9 +872,31 @@ function feinEditor(regel, i) {
   return det;
 }
 
+/* ---------- Erweiterte Regeln (und/oder) ---------- */
+function zeichneModusSchalter() {
+  var schalter = $("erweitert-schalter"); if (!schalter) return;
+  schalter.checked = erweitert;
+  $("erweitert-erklaerung").innerHTML = erweitert
+    ? "An: Du kannst Bausteine mit „+ oder“ kombinieren – dann genügt eine der Zeilen. Bausteine lassen sich außerdem ziehen."
+    : "Aus: Alle Bausteine werden mit <b>und</b> verknüpft. Einfacher, aber ohne Alternativen.";
+  // Ist der Modus aus, verschwinden „+ oder“ und die Anfasser. Das muss dort
+  // erklärt werden, wo man es sucht – sonst wirkt die App kaputt.
+  var ziel = $("modus-hinweis");
+  if (erweitert) { ziel.innerHTML = ""; return; }
+  ziel.innerHTML = '<div class="modus-aus"><div><b>Erweiterte Regeln sind aus.</b> '
+    + 'Deshalb gibt es kein „+ oder“ und kein Ziehen – alle Bausteine sind mit <b>und</b> verknüpft.</div>'
+    + '<button class="knopf" type="button" id="modus-an">Einschalten</button></div>';
+  $("modus-an").addEventListener("click", function () {
+    erweitert = true; zustand.erweitert = true; speichere(); zeichneModusSchalter(); zeichneRegeln();
+  });
+}
+
 /* ---------- Vorschau + Wetter ---------- */
 var vorschauTimer = null;
 function aktualisiereVorschauLangsam() { clearTimeout(vorschauTimer); vorschauTimer = setTimeout(aktualisiereVorschau, 700); }
+/* Namen, die der gemeinsame Baustein-Editor erwartet. */
+function zeichneAlles() { zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge(); }
+function vorschauLangsam() { aktualisiereVorschauLangsam(); syncWennAktiv(); }
 function wetterCacheKey() { return zustand.ort ? "wwCache_" + zustand.ort.lat + "," + zustand.ort.lon : null; }
 function anwendeVorschau(d) {
   letzteTreffer = d.treffer; letzteTage = d.tage || []; letzteStunden = d.stunden || null;
@@ -1225,9 +1247,17 @@ function zeichneNudge() {
   banner.appendChild(ja); banner.appendChild(spaeter); ziel.appendChild(banner);
 }
 
+${BAUSTEINE_JS}
+
 /* ---------- Start ---------- */
 $("push-schalter").checked = !!zustand.aktiviert;
-zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); zeichneSchriftwahl(); aktualisiereVorschau();
+migriereRegeln();
+$("erweitert-schalter").addEventListener("change", function () {
+  erweitert = this.checked; zustand.erweitert = erweitert; speichere();
+  zeichneModusSchalter(); zeichneRegeln();
+});
+zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); zeichneSchriftwahl();
+zeichneModusSchalter(); aktualisiereVorschau();
 setzeHintergrund(); setInterval(setzeHintergrund, 5 * 60 * 1000);
 if (!zustand.willkommenGesehen) zeigeWillkommen();
 </script>

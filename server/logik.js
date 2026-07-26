@@ -326,6 +326,12 @@ export function normalisiereRegeln(regeln) {
     };
     const bausteine = normalisiereBausteine(r?.bausteine);
     if (bausteine) geprueft.bausteine = bausteine;
+    else if (Array.isArray(r?.bausteine) && r.bausteine.length) {
+      // Bausteine eingereicht, aber keiner davon brauchbar: Die Regel würde
+      // sonst auf die (evtl. leeren) alten Bedingungen zurückfallen und jede
+      // Stunde treffen. Lieber stillegen als den Nutzer zuspammen.
+      geprueft.aktiv = false;
+    }
     return geprueft;
   });
 }
