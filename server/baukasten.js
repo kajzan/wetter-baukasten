@@ -38,77 +38,96 @@ export function baukastenSeite() {
   }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-         background:var(--hg); color:var(--text); line-height:1.5; -webkit-text-size-adjust:100%; }
-  main { max-width:640px; margin:0 auto; padding:14px 12px 60px; }
-  h1 { font-size:1.25rem; margin:4px 2px 2px; }
-  h2 { font-size:1.02rem; margin:0 0 10px; }
-  .karte { background:var(--karte); border:1px solid var(--linie); border-radius:14px; padding:14px; margin-bottom:14px; }
-  .hinweis { font-size:.82rem; color:var(--text2); }
-  .versuch { background:var(--gelb-hell); color:var(--gelb); border-radius:10px;
-    padding:9px 11px; font-size:.84rem; margin:0 2px 14px; }
-  .knopf { display:inline-block; border:0; border-radius:10px; cursor:pointer;
-    padding:10px 14px; font-size:.92rem; font-weight:600; background:var(--akzent); color:#fff; }
+         background:var(--hg); color:var(--text); line-height:1.4; -webkit-text-size-adjust:100%; }
+  main { max-width:640px; margin:0 auto; padding:10px 10px 50px; }
+  h1 { font-size:1.2rem; margin:2px 2px 6px; }
+  h2 { font-size:.98rem; margin:0 0 7px; }
+  .karte { background:var(--karte); border:1px solid var(--linie); border-radius:12px; padding:11px; margin-bottom:10px; }
+  .hinweis { font-size:.79rem; color:var(--text2); }
+  .versuch { background:var(--gelb-hell); color:var(--gelb); border-radius:9px;
+    padding:7px 10px; font-size:.8rem; margin:0 2px 10px; }
+  .knopf { display:inline-block; border:0; border-radius:9px; cursor:pointer;
+    padding:9px 13px; font-size:.9rem; font-weight:600; background:var(--akzent); color:#fff; }
   .knopf.zart { background:var(--akzent-hell); color:var(--akzent); }
   .knopf.rot { background:var(--rot-hell); color:var(--rot); }
-  .knopf.klein { padding:6px 11px; font-size:.82rem; }
-  input[type=text] { width:100%; padding:10px 11px; border:1px solid var(--linie);
-    border-radius:10px; background:var(--hg); color:var(--text); font-size:16px; }
-  input[type=number] { width:100%; padding:6px 7px; border:1px solid var(--linie);
-    border-radius:8px; background:var(--hg); color:var(--text); font-size:16px; text-align:right; }
-  select { padding:8px 9px; border:1px solid var(--linie); border-radius:8px;
+  .knopf.klein { padding:5px 10px; font-size:.8rem; border-radius:8px; }
+  input[type=text] { width:100%; padding:9px 10px; border:1px solid var(--linie);
+    border-radius:9px; background:var(--hg); color:var(--text); font-size:16px; }
+  input[type=number] { width:100%; padding:4px 6px; border:1px solid var(--linie);
+    border-radius:7px; background:var(--hg); color:var(--text); font-size:16px; text-align:right; }
+  select { padding:6px 8px; border:1px solid var(--linie); border-radius:7px;
     background:var(--hg); color:var(--text); font-size:16px; }
-  label { font-size:.8rem; color:var(--text2); display:block; margin-bottom:2px; }
+  label { font-size:.75rem; color:var(--text2); display:block; margin-bottom:1px; }
+
+  /* ---- Schalter ---- */
+  .schalter-zeile { display:flex; align-items:center; gap:10px; }
+  .schalter-zeile .txt { flex:1; font-weight:600; font-size:.92rem; }
+  .schalter { position:relative; width:44px; height:25px; flex-shrink:0; }
+  .schalter input { opacity:0; width:100%; height:100%; position:absolute; margin:0; cursor:pointer; z-index:2; }
+  .schalter .bahn { position:absolute; inset:0; border-radius:13px; background:var(--linie); transition:background .15s; }
+  .schalter .bahn::after { content:""; position:absolute; top:3px; left:3px; width:19px; height:19px;
+    border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:left .15s; }
+  .schalter input:checked + .bahn { background:var(--gruen); }
+  .schalter input:checked + .bahn::after { left:22px; }
 
   /* ---- Regel ---- */
-  .regel { border:1px solid var(--linie); border-radius:14px; padding:12px; margin-bottom:14px; background:var(--karte); }
-  .regelkopf { display:flex; align-items:center; gap:9px; margin-bottom:4px; }
-  .regelkopf .emoji { font-size:1.4rem; }
-  .regelkopf .name { flex:1; font-weight:700; font-size:1.05rem; border:0; background:none;
-    color:var(--text); padding:2px 0; min-width:0; }
-  .regelkopf .name:focus { outline:2px solid var(--akzent); outline-offset:2px; border-radius:6px; }
+  .regel { border:1px solid var(--linie); border-radius:12px; padding:10px; margin-bottom:10px; background:var(--karte); }
+  .regelkopf { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+  .regelkopf .emoji { font-size:1.3rem; }
+  .regelkopf .name { flex:1; font-weight:700; font-size:1.02rem; border:0; background:none;
+    color:var(--text); padding:1px 0; min-width:0; }
+  .regelkopf .name:focus { outline:2px solid var(--akzent); outline-offset:2px; border-radius:5px; }
 
   /* ---- Bausteine ---- */
-  .bausteine { margin-top:8px; }
-  .baustein { border:1px solid var(--linie); border-radius:12px; padding:8px 10px 10px; margin-top:8px;
-    background:var(--hg); }
+  .bausteine { margin-top:6px; }
+  .baustein { border:1px solid var(--linie); border-radius:10px; padding:5px 8px 6px; margin-top:5px; background:var(--hg); }
   .baustein.mehrfach { border-color:var(--akzent); box-shadow:0 0 0 1px var(--akzent-hell); }
-  .und-trenner { text-align:center; font-size:.74rem; color:var(--text2); letter-spacing:.08em;
-    text-transform:uppercase; margin:8px 0 0; font-weight:700; }
-  .teil { padding:4px 0; }
-  .teil + .teil { border-top:1px dashed var(--linie); margin-top:6px; padding-top:8px; }
-  .teilkopf { display:flex; align-items:center; gap:7px; }
-  .teilkopf .sym { font-size:1.05rem; }
-  .teilkopf .bez { flex:1; font-weight:600; font-size:.92rem; }
-  .teilkopf .weg { border:0; background:none; color:var(--text2); cursor:pointer; font-size:1rem;
-    padding:2px 6px; line-height:1; }
-  .oder-marke { display:inline-block; background:var(--akzent); color:#fff; border-radius:6px;
-    padding:1px 7px; font-size:.7rem; font-weight:700; letter-spacing:.06em; margin-bottom:5px; }
-  .grenze { display:grid; grid-template-columns:74px 22px 1fr 62px; gap:7px; align-items:center; padding:3px 0; }
-  .grenze .txt { font-size:.8rem; color:var(--text2); }
-  .grenze input[type=checkbox] { width:19px; height:19px; accent-color:var(--akzent); margin:0; }
-  .grenze input[type=range] { width:100%; accent-color:var(--akzent); }
-  .grenze.aus input[type=range], .grenze.aus input[type=number] { opacity:.35; pointer-events:none; }
-  .sektoren { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:6px; }
+  .und-trenner { text-align:center; font-size:.68rem; color:var(--text2); letter-spacing:.09em;
+    text-transform:uppercase; margin:4px 0 0; font-weight:700; }
+  .teil { padding:2px 0; }
+  .teil + .teil { border-top:1px dashed var(--linie); margin-top:4px; padding-top:5px; }
+  .teilkopf { display:flex; align-items:center; gap:6px; }
+  .teilkopf .sym { font-size:1rem; }
+  .teilkopf .bez { flex:1; font-weight:600; font-size:.88rem; }
+  .teilkopf .weg { border:0; background:none; color:var(--text2); cursor:pointer; font-size:.95rem;
+    padding:1px 5px; line-height:1; }
+  /* „+ oder“ sitzt in der Kopfzeile des Bausteins, damit keine eigene Zeile nötig ist */
+  .teilkopf .oder-knopf { border:1px solid var(--akzent); background:var(--akzent-hell); color:var(--akzent);
+    border-radius:999px; padding:1px 9px; font-size:.72rem; font-weight:700; cursor:pointer; line-height:1.5; }
+  .oder-marke { display:inline-block; background:var(--akzent); color:#fff; border-radius:5px;
+    padding:0 6px; font-size:.66rem; font-weight:700; letter-spacing:.06em; margin-bottom:2px; }
+  .grenze { display:grid; grid-template-columns:74px 20px 1fr 54px; gap:5px; align-items:center; padding:0; }
+  .grenze .txt { font-size:.76rem; color:var(--text2); }
+  .grenze input[type=checkbox] { width:17px; height:17px; accent-color:var(--akzent); margin:0; }
+  .grenze input[type=range] { width:100%; height:16px; accent-color:var(--akzent); margin:0; display:block; }
+  /* Nicht gesetzte Grenzen schrumpfen auf eine dünne Zeile – kein grauer Regler-Ballast */
+  .grenze.aus { grid-template-columns:74px 20px; }
+  .grenze.aus input[type=range], .grenze.aus input[type=number] { display:none; }
+  .sektoren { display:grid; grid-template-columns:repeat(8,1fr); gap:3px; margin-top:4px; }
   .sektoren button { border:1px solid var(--linie); background:var(--karte); color:var(--text);
-    border-radius:8px; padding:7px 3px; font-size:.8rem; cursor:pointer; }
+    border-radius:6px; padding:5px 0; font-size:.68rem; cursor:pointer; }
   .sektoren button.an { background:var(--akzent); color:#fff; border-color:var(--akzent); }
-  .werkzeuge { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+  .werkzeuge { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; align-items:center; }
 
-  /* ---- Auswahl neuer Bausteine ---- */
-  .auswahl { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  /* ---- Chips (neue Bausteine, Vorlagen) ---- */
+  .auswahl { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
   .auswahl button { border:1px dashed var(--linie); background:var(--hg); color:var(--text);
-    border-radius:999px; padding:7px 12px; font-size:.86rem; cursor:pointer; }
+    border-radius:999px; padding:5px 10px; font-size:.83rem; cursor:pointer; }
   .auswahl button:hover { border-color:var(--akzent); color:var(--akzent); }
+  .auswahl.vorlagen button { border-style:solid; background:var(--karte); }
 
-  /* ---- Satz + Treffer ---- */
-  .satz { background:var(--akzent-hell); border-radius:10px; padding:9px 11px; margin-top:10px;
-    font-size:.88rem; line-height:1.45; }
+  /* ---- Satz, Warnung, Treffer ---- */
+  .satz { background:var(--akzent-hell); border-radius:9px; padding:6px 9px; margin-top:7px;
+    font-size:.8rem; line-height:1.38; }
   .satz b { color:var(--akzent); }
-  .treffer { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:7px 9px;
-    margin-top:7px; font-size:.86rem; }
-  .kein-treffer { color:var(--text2); font-size:.84rem; margin-top:7px; }
-  .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:8px 10px;
-    font-size:.86rem; margin-top:8px; }
+  .unmoeglich { background:var(--rot-hell); color:var(--rot); border-radius:9px; padding:7px 10px;
+    margin-top:6px; font-size:.82rem; line-height:1.4; }
+  .treffer { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:5px 9px;
+    margin-top:5px; font-size:.83rem; }
+  .kein-treffer { color:var(--text2); font-size:.81rem; margin-top:6px; }
+  .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:7px 10px;
+    font-size:.83rem; margin-top:6px; }
+  .zeitleiste { display:flex; flex-wrap:wrap; gap:8px; margin-top:9px; }
 </style>
 </head>
 <body>
@@ -122,11 +141,24 @@ export function baukastenSeite() {
     <div id="ort-zeile"></div>
   </section>
 
+  <section class="karte">
+    <div class="schalter-zeile">
+      <span class="txt">Erweiterte Regeln (und/oder)</span>
+      <label class="schalter"><input type="checkbox" id="erweitert-schalter"><span class="bahn"></span></label>
+    </div>
+    <p class="hinweis" id="erweitert-erklaerung" style="margin:6px 0 0"></p>
+  </section>
+
+  <section class="karte">
+    <h2>Vorlage hinzufügen</h2>
+    <div class="auswahl vorlagen" id="vorlagen"></div>
+  </section>
+
   <div id="regeln"></div>
 
-  <button class="knopf zart" id="neue-regel" style="width:100%">+ Neuen Wunsch anlegen</button>
+  <button class="knopf zart" id="neue-regel" style="width:100%">+ Leeren Wunsch anlegen</button>
 
-  <section class="karte" style="margin-top:14px">
+  <section class="karte" style="margin-top:10px">
     <h2>So funktioniert es</h2>
     <p class="hinweis" style="margin:0">Jeder <b>Baustein</b> ist eine Bedingung. <b>Alle</b> Bausteine müssen
     passen. Mit „+ oder“ legst du eine Alternative in denselben Baustein – dann reicht <b>eine</b> der Zeilen.
@@ -157,15 +189,33 @@ var MAX_BAUSTEINE = 8, MAX_ALTERNATIVEN = 3;
 var SPEICHER_APP = "wetterWaechterApp_v2";
 var SPEICHER_DEMO = "wetterWaechterBaukasten_v1";
 
-/* Beispiel aus dem echten Leben: südseitiger Balkon. */
-function beispielRegel() {
-  return { name:"Pizza am Balkon", emoji:"🍕", zeitfensterStunden:72, nurVonUhr:11, nurBisUhr:22,
-    mindestdauerStunden:2, bausteine: [
-      { teile:[{ art:"temp", min:18, max:28 }] },
-      { teile:[{ art:"regen", max:0 }] },
-      { teile:[{ art:"wind", max:10 }, { art:"windrichtung", sektoren:["N","NO","NW"] }] }
-    ] };
+/* Die bekannten Vorlagen, in Bausteinform. „Pizza am Balkon“ zeigt das „oder“. */
+function B(art, min, max) {
+  var t = { art: art };
+  if (min !== null && min !== undefined) t.min = min;
+  if (max !== null && max !== undefined) t.max = max;
+  return { teile: [t] };
 }
+var VORLAGEN = [
+  { name:"Pizza am Balkon", emoji:"🍕", zeitfensterStunden:72, nurVonUhr:11, nurBisUhr:22, mindestdauerStunden:2,
+    bausteine:[ B("temp",18,28), B("regen",null,0),
+                { teile:[{ art:"wind", max:10 }, { art:"windrichtung", sektoren:["N","NO","NW"] }] } ] },
+  { name:"Pizzatag", emoji:"🍕", zeitfensterStunden:48, nurVonUhr:11, nurBisUhr:21, mindestdauerStunden:3,
+    bausteine:[ B("temp",18,28), B("wind",null,10), B("regen",null,0) ] },
+  { name:"Pflanztag", emoji:"🌱", zeitfensterStunden:48, nurVonUhr:8, nurBisUhr:20, mindestdauerStunden:4,
+    bausteine:[ B("temp",15,24), B("bewoelkung",30,70), B("regen",null,0.2) ] },
+  { name:"Wäschetag", emoji:"🧺", zeitfensterStunden:48, nurVonUhr:9, nurBisUhr:19, mindestdauerStunden:4,
+    bausteine:[ B("temp",15,null), B("wind",5,30), B("regen",null,0), B("feuchte",null,65) ] },
+  { name:"Lauf-Wetter", emoji:"🏃", zeitfensterStunden:48, nurVonUhr:6, nurBisUhr:21, mindestdauerStunden:1,
+    bausteine:[ B("temp",5,20), B("wind",null,20), B("regen",null,0.2) ] },
+  { name:"Fahrrad-Wetter", emoji:"🚲", zeitfensterStunden:48, nurVonUhr:6, nurBisUhr:20, mindestdauerStunden:1,
+    bausteine:[ B("temp",8,28), B("wind",null,20), B("boe",null,35), B("regen",null,0.1) ] },
+  { name:"Sonnencreme", emoji:"🧴", zeitfensterStunden:48, nurVonUhr:9, nurBisUhr:18, mindestdauerStunden:2,
+    bausteine:[ B("uv",6,null) ] },
+  { name:"Sturm-Warnung", emoji:"⛈️", zeitfensterStunden:48, nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1,
+    bausteine:[ { teile:[{ art:"wind", min:60 }, { art:"boe", min:90 }] } ] }
+];
+function ausVorlage(v) { return JSON.parse(JSON.stringify(v)); }
 
 function $(id) { return document.getElementById(id); }
 function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -173,10 +223,14 @@ function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").rep
 var ort = null;
 try { var app = JSON.parse(localStorage.getItem(SPEICHER_APP) || "{}"); if (app && app.ort) ort = app.ort; } catch (e) {}
 
-var regeln = [];
-try { var d = JSON.parse(localStorage.getItem(SPEICHER_DEMO) || "null"); if (d && Array.isArray(d.regeln)) regeln = d.regeln; } catch (e) {}
-if (!regeln.length) regeln = [beispielRegel()];
-function speichere() { localStorage.setItem(SPEICHER_DEMO, JSON.stringify({ regeln: regeln })); }
+var regeln = [], erweitert = true;
+try {
+  var d = JSON.parse(localStorage.getItem(SPEICHER_DEMO) || "null");
+  if (d && Array.isArray(d.regeln)) regeln = d.regeln;
+  if (d && typeof d.erweitert === "boolean") erweitert = d.erweitert;
+} catch (e) {}
+if (!regeln.length) regeln = [ausVorlage(VORLAGEN[0])];
+function speichere() { localStorage.setItem(SPEICHER_DEMO, JSON.stringify({ regeln: regeln, erweitert: erweitert })); }
 
 /* ---------- Ort ---------- */
 function zeichneOrt() {
@@ -184,7 +238,7 @@ function zeichneOrt() {
   if (ort) {
     ziel.innerHTML = '<p style="margin:0"><b>' + sicher(ort.name) + '</b> '
       + '<span class="hinweis">· ' + ort.lat + " / " + ort.lon + '</span></p>'
-      + '<p class="hinweis" style="margin:6px 0 0">Aus der App übernommen. Die Treffer unten sind echt.</p>';
+      + '<p class="hinweis" style="margin:4px 0 0">Aus der App übernommen. Die Treffer unten sind echt.</p>';
   } else {
     ziel.innerHTML = '<p class="hinweis" style="margin:0 0 8px">Noch kein Ort gewählt. Öffne zuerst die App '
       + 'und wähle deinen Ort – die Demo übernimmt ihn dann automatisch.</p>'
@@ -199,8 +253,7 @@ function teilSatz(teil) {
   if (!art) return "?";
   if (teil.art === "windrichtung") {
     var s = teil.sektoren || [];
-    if (!s.length) return "Windrichtung egal";
-    return "Wind aus " + s.join("/");
+    return s.length ? "Wind aus " + s.join("/") : "Windrichtung egal";
   }
   var e = art.einheit ? " " + art.einheit : "";
   if (teil.art === "regen" && teil.max === 0 && teil.min === undefined) return "kein Regen";
@@ -211,9 +264,9 @@ function teilSatz(teil) {
   return art.bez + " egal";
 }
 function regelSatz(regel) {
-  var teile = (regel.bausteine || []).filter(function (b) { return b.teile && b.teile.length; });
-  if (!teile.length) return "<b>Passt immer</b> – noch kein Baustein gewählt.";
-  var stuecke = teile.map(function (b) {
+  var voll = (regel.bausteine || []).filter(function (b) { return b.teile && b.teile.length; });
+  if (!voll.length) return "<b>Passt immer</b> – noch kein Baustein gewählt.";
+  var stuecke = voll.map(function (b) {
     var s = b.teile.map(teilSatz);
     return s.length > 1 ? "(" + s.join(" <b>oder</b> ") + ")" : s[0];
   });
@@ -222,8 +275,74 @@ function regelSatz(regel) {
   return "<b>Passt, wenn:</b> " + stuecke.join(" <b>und</b> ") + "." + zeit;
 }
 
+/* ---------- Unerfüllbare Regeln erkennen ----------
+   Zwei getrennte Bausteine derselben Art werden mit „und“ verknüpft. Wer
+   10–20 °C UND 30–40 °C fordert, bekommt nie einen Treffer – das sagen wir. */
+function unmoeglichkeiten(regel) {
+  var probleme = [], pflicht = {};
+  (regel.bausteine || []).forEach(function (b) {
+    var teile = b.teile || [];
+    teile.forEach(function (t) {
+      if (t.min !== undefined && t.max !== undefined && t.min > t.max) {
+        probleme.push(ARTEN[t.art].bez + ": „mindestens " + zahlText(t.min) + "“ ist größer als „höchstens "
+          + zahlText(t.max) + "“.");
+      }
+    });
+    if (teile.length !== 1) return;                 // „oder“-Bausteine sind nie in sich unmöglich
+    var t = teile[0];
+    if (t.art === "windrichtung") {
+      var s = t.sektoren || []; if (!s.length) return;
+      if (!pflicht.windrichtung) pflicht.windrichtung = { sektoren: s.slice(), anzahl: 1 };
+      else {
+        pflicht.windrichtung.anzahl++;
+        pflicht.windrichtung.sektoren = pflicht.windrichtung.sektoren.filter(function (x) { return s.indexOf(x) >= 0; });
+      }
+      return;
+    }
+    if (!pflicht[t.art]) pflicht[t.art] = { min: -Infinity, max: Infinity, anzahl: 0 };
+    var p = pflicht[t.art];
+    if (t.min !== undefined) p.min = Math.max(p.min, t.min);
+    if (t.max !== undefined) p.max = Math.min(p.max, t.max);
+    p.anzahl++;
+  });
+  Object.keys(pflicht).forEach(function (art) {
+    var p = pflicht[art];
+    if (p.anzahl < 2) return;
+    if (art === "windrichtung") {
+      if (!p.sektoren.length) probleme.push("Windrichtung: die geforderten Richtungen schließen sich gegenseitig aus.");
+      return;
+    }
+    if (p.min > p.max) {
+      probleme.push(ARTEN[art].bez + ": es müsste gleichzeitig mindestens " + zahlText(p.min)
+        + " und höchstens " + zahlText(p.max) + (ARTEN[art].einheit ? " " + ARTEN[art].einheit : "") + " sein.");
+    }
+  });
+  return probleme;
+}
+
 /* ---------- Zeichnen ---------- */
-function zeichneAlles() { zeichneOrt(); zeichneRegeln(); hoereVorschau(); }
+function zeichneAlles() { zeichneOrt(); zeichneSchalter(); zeichneVorlagen(); zeichneRegeln(); hoereVorschau(); }
+
+function zeichneSchalter() {
+  $("erweitert-schalter").checked = erweitert;
+  $("erweitert-erklaerung").innerHTML = erweitert
+    ? "An: Du kannst Bausteine mit „+ oder“ zu Alternativen kombinieren."
+    : "Aus: Alle Bausteine werden mit <b>und</b> verknüpft – wie in der bisherigen App.";
+}
+$("erweitert-schalter").addEventListener("change", function () {
+  erweitert = this.checked; speichere(); zeichneAlles();
+});
+
+function zeichneVorlagen() {
+  var ziel = $("vorlagen"); ziel.innerHTML = "";
+  VORLAGEN.forEach(function (v) {
+    if (!erweitert && v.bausteine.some(function (b) { return b.teile.length > 1; })) return;
+    var knopf = document.createElement("button"); knopf.type = "button";
+    knopf.textContent = v.emoji + " " + v.name;
+    knopf.addEventListener("click", function () { regeln.push(ausVorlage(v)); speichere(); zeichneAlles(); });
+    ziel.appendChild(knopf);
+  });
+}
 
 function zeichneRegeln() {
   var ziel = $("regeln"); ziel.innerHTML = "";
@@ -241,7 +360,9 @@ function zeichneRegel(regel, ri) {
     regel.name = this.value.trim() || "Wunsch"; speichere(); hoereVorschau();
   });
   kopf.querySelector("button").addEventListener("click", function () {
-    regeln.splice(ri, 1); if (!regeln.length) regeln = [beispielRegel()]; speichere(); zeichneAlles();
+    regeln.splice(ri, 1);
+    if (!regeln.length) regeln = [ausVorlage(VORLAGEN[0])];
+    speichere(); zeichneAlles();
   });
   karte.appendChild(kopf);
 
@@ -252,31 +373,29 @@ function zeichneRegel(regel, ri) {
   });
   karte.appendChild(bau);
 
-  // Neue Bausteine anbieten
+  // Ein Knopf statt einer Chip-Reihe je Regel – spart spürbar Höhe.
   var auswahl = document.createElement("div"); auswahl.className = "auswahl";
-  ARTEN_REIHE.forEach(function (art) {
-    var knopf = document.createElement("button"); knopf.type = "button";
-    knopf.textContent = ARTEN[art].emoji + " " + ARTEN[art].bez;
-    knopf.addEventListener("click", function () {
-      if ((regel.bausteine || []).length >= MAX_BAUSTEINE) return;
-      regel.bausteine = (regel.bausteine || []).concat([{ teile: [neuerTeil(art)] }]);
-      speichere(); zeichneAlles();
-    });
-    auswahl.appendChild(knopf);
-  });
   if ((regel.bausteine || []).length >= MAX_BAUSTEINE) {
     auswahl.innerHTML = '<p class="hinweis" style="margin:0">Mehr als ' + MAX_BAUSTEINE + ' Bausteine sind nicht vorgesehen.</p>';
+  } else {
+    var neu = document.createElement("button");
+    neu.className = "knopf zart klein"; neu.type = "button"; neu.id = "baustein-" + ri;
+    neu.textContent = "+ Baustein";
+    neu.addEventListener("click", function () { zeigeArtWahl({ regel: regel }); });
+    auswahl.appendChild(neu);
+    var wink = document.createElement("span"); wink.className = "hinweis";
+    wink.textContent = "muss zusätzlich passen (und)";
+    auswahl.appendChild(wink);
   }
+  auswahl.style.alignItems = "center";
   karte.appendChild(auswahl);
 
-  // Zeitangaben
-  var zeit = document.createElement("div"); zeit.className = "werkzeuge";
-  zeit.style.marginTop = "12px";
+  var zeit = document.createElement("div"); zeit.className = "zeitleiste";
   var opt = FENSTER.map(function (o) { return '<option value="' + o[0] + '"' + ((regel.zeitfensterStunden || 48) === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
   zeit.innerHTML = '<div><label>Vorschau</label><select data-f="zeitfensterStunden">' + opt + '</select></div>'
-    + '<div><label>Von (Uhr)</label><input type="number" min="0" max="23" style="width:64px" value="' + (regel.nurVonUhr || 0) + '" data-f="nurVonUhr"></div>'
-    + '<div><label>Bis (Uhr)</label><input type="number" min="1" max="24" style="width:64px" value="' + (regel.nurBisUhr != null ? regel.nurBisUhr : 24) + '" data-f="nurBisUhr"></div>'
-    + '<div><label>Mind. Std.</label><input type="number" min="1" max="24" style="width:64px" value="' + (regel.mindestdauerStunden || 2) + '" data-f="mindestdauerStunden"></div>';
+    + '<div><label>Von (Uhr)</label><input type="number" min="0" max="23" style="width:60px" value="' + (regel.nurVonUhr || 0) + '" data-f="nurVonUhr"></div>'
+    + '<div><label>Bis (Uhr)</label><input type="number" min="1" max="24" style="width:60px" value="' + (regel.nurBisUhr != null ? regel.nurBisUhr : 24) + '" data-f="nurBisUhr"></div>'
+    + '<div><label>Mind. Std.</label><input type="number" min="1" max="24" style="width:60px" value="' + (regel.mindestdauerStunden || 2) + '" data-f="mindestdauerStunden"></div>';
   Array.prototype.forEach.call(zeit.querySelectorAll("select,input"), function (feld) {
     feld.addEventListener("change", function () {
       var z = parseInt(this.value, 10);
@@ -288,6 +407,14 @@ function zeichneRegel(regel, ri) {
   var satz = document.createElement("div"); satz.className = "satz";
   satz.innerHTML = regelSatz(regel);
   karte.appendChild(satz);
+
+  var probleme = unmoeglichkeiten(regel);
+  if (probleme.length) {
+    var warn = document.createElement("div"); warn.className = "unmoeglich";
+    warn.innerHTML = '<b>⚠️ Kann nie zutreffen.</b> ' + probleme.map(sicher).join(" ")
+      + (erweitert ? ' <br>Meintest du „entweder … oder …“? Dann gehören beide in <b>einen</b> Baustein (+ oder).' : "");
+    karte.appendChild(warn);
+  }
 
   var tr = document.createElement("div"); tr.dataset.treffer = ri;
   tr.innerHTML = '<div class="kein-treffer">Prüfe …</div>';
@@ -315,8 +442,14 @@ function zeichneBaustein(regel, baustein, bi) {
     var art = ARTEN[teil.art];
 
     var kopf = document.createElement("div"); kopf.className = "teilkopf";
+    var letzte = ti === baustein.teile.length - 1;
+    var zeigeOder = letzte && erweitert && baustein.teile.length < MAX_ALTERNATIVEN;
     kopf.innerHTML = '<span class="sym">' + art.emoji + '</span><span class="bez">' + art.bez + '</span>'
+      + (zeigeOder ? '<button class="oder-knopf" type="button">+ oder</button>' : "")
       + '<button class="weg" type="button" title="Entfernen" aria-label="Entfernen">✕</button>';
+    if (zeigeOder) kopf.querySelector(".oder-knopf").addEventListener("click", function () {
+      zeigeArtWahl({ baustein: baustein });
+    });
     kopf.querySelector(".weg").addEventListener("click", function () {
       baustein.teile.splice(ti, 1);
       if (!baustein.teile.length) regel.bausteine.splice(bi, 1);
@@ -328,9 +461,8 @@ function zeichneBaustein(regel, baustein, bi) {
       var gitter = document.createElement("div"); gitter.className = "sektoren";
       SEKTOREN.forEach(function (sekt, si) {
         var knopf = document.createElement("button"); knopf.type = "button";
-        var an = (teil.sektoren || []).indexOf(sekt) >= 0;
-        if (an) knopf.className = "an";
-        knopf.textContent = PFEIL_VON[si] + " " + sekt;
+        if ((teil.sektoren || []).indexOf(sekt) >= 0) knopf.className = "an";
+        knopf.textContent = PFEIL_VON[si] + sekt;
         knopf.addEventListener("click", function () {
           var liste = (teil.sektoren || []).slice();
           var pos = liste.indexOf(sekt);
@@ -347,21 +479,17 @@ function zeichneBaustein(regel, baustein, bi) {
     kasten.appendChild(reihe);
   });
 
-  var werkzeuge = document.createElement("div"); werkzeuge.className = "werkzeuge";
-  if (baustein.teile.length < MAX_ALTERNATIVEN) {
-    var oder = document.createElement("button");
-    oder.className = "knopf zart klein"; oder.type = "button"; oder.textContent = "+ oder";
-    oder.addEventListener("click", function () { zeigeArtWahl(regel, baustein); });
-    werkzeuge.appendChild(oder);
-    // Erklärt sich nur dort, wo schon kombiniert wurde – sonst wird es unruhig.
-    if (baustein.teile.length > 1) {
-      var erklaerung = document.createElement("span"); erklaerung.className = "hinweis";
-      erklaerung.style.alignSelf = "center";
-      erklaerung.textContent = "Eine dieser " + baustein.teile.length + " Zeilen genügt.";
-      werkzeuge.appendChild(erklaerung);
-    }
+  // Nur dort eine Fußzeile, wo es etwas zu erklären gibt.
+  var text = "";
+  if (erweitert && baustein.teile.length > 1) text = "Eine dieser " + baustein.teile.length + " Zeilen genügt.";
+  else if (!erweitert && baustein.teile.length > 1) text = "Alternativen – zum Ändern „Erweiterte Regeln“ einschalten.";
+  if (text) {
+    var fuss = document.createElement("div"); fuss.className = "werkzeuge";
+    var erklaerung = document.createElement("span"); erklaerung.className = "hinweis";
+    erklaerung.textContent = text;
+    fuss.appendChild(erklaerung);
+    kasten.appendChild(fuss);
   }
-  kasten.appendChild(werkzeuge);
   return kasten;
 }
 
@@ -384,34 +512,40 @@ function grenzZeile(teil, feld, wort) {
   });
   function uebernehme(w) {
     var z = parseFloat(w);
-    if (!isNaN(z) && haken.checked) { teil[feld] = z; speichere(); frischeSatz(); vorschauLangsam(); }
+    if (!isNaN(z) && haken.checked) { teil[feld] = z; speichere(); frischeTexte(); vorschauLangsam(); }
   }
   regler.addEventListener("input", function () { zahl.value = this.value; uebernehme(this.value); });
   zahl.addEventListener("change", function () { regler.value = this.value; uebernehme(this.value); });
   return reihe;
 }
 
-/* Kleine Auswahl, welche Alternative in den Baustein soll. */
-function zeigeArtWahl(regel, baustein) {
+/* Auswahlblatt – entweder für eine Alternative (ziel.baustein) oder für einen
+   ganz neuen Baustein (ziel.regel). */
+function zeigeArtWahl(ziel) {
+  var alternative = Boolean(ziel.baustein);
   var hg = document.createElement("div");
   hg.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:flex-end;justify-content:center";
   var kasten = document.createElement("div");
-  kasten.style.cssText = "background:var(--karte);border-radius:16px 16px 0 0;padding:16px;width:100%;max-width:640px";
-  kasten.innerHTML = '<h2 style="margin-bottom:4px">Alternative hinzufügen</h2>'
-    + '<p class="hinweis" style="margin:0 0 10px">Danach genügt <b>eine</b> der Zeilen in diesem Baustein.</p>';
+  kasten.style.cssText = "background:var(--karte);border-radius:16px 16px 0 0;padding:14px;width:100%;max-width:640px";
+  kasten.innerHTML = '<h2 style="margin-bottom:3px">' + (alternative ? "Alternative hinzufügen" : "Baustein hinzufügen") + '</h2>'
+    + '<p class="hinweis" style="margin:0 0 8px">' + (alternative
+        ? "Danach genügt <b>eine</b> der Zeilen in diesem Baustein."
+        : "Der neue Baustein muss <b>zusätzlich</b> passen.") + '</p>';
   var auswahl = document.createElement("div"); auswahl.className = "auswahl";
   ARTEN_REIHE.forEach(function (art) {
     var knopf = document.createElement("button"); knopf.type = "button";
     knopf.textContent = ARTEN[art].emoji + " " + ARTEN[art].bez;
     knopf.addEventListener("click", function () {
-      baustein.teile.push(neuerTeil(art)); speichere(); hg.remove(); zeichneAlles();
+      if (alternative) ziel.baustein.teile.push(neuerTeil(art));
+      else ziel.regel.bausteine = (ziel.regel.bausteine || []).concat([{ teile: [neuerTeil(art)] }]);
+      speichere(); hg.remove(); zeichneAlles();
     });
     auswahl.appendChild(knopf);
   });
   kasten.appendChild(auswahl);
   var zu = document.createElement("button");
   zu.className = "knopf zart"; zu.type = "button"; zu.textContent = "Abbrechen";
-  zu.style.cssText = "width:100%;margin-top:12px";
+  zu.style.cssText = "width:100%;margin-top:10px";
   zu.addEventListener("click", function () { hg.remove(); });
   kasten.appendChild(zu);
   hg.appendChild(kasten);
@@ -419,9 +553,16 @@ function zeigeArtWahl(regel, baustein) {
   document.body.appendChild(hg);
 }
 
-function frischeSatz() {
+/* Satz und Warnung ohne Neuaufbau auffrischen (beim Schieben der Regler). */
+function frischeTexte() {
   Array.prototype.forEach.call(document.querySelectorAll(".regel"), function (el, ri) {
-    var s = el.querySelector(".satz"); if (s && regeln[ri]) s.innerHTML = regelSatz(regeln[ri]);
+    if (!regeln[ri]) return;
+    var s = el.querySelector(".satz"); if (s) s.innerHTML = regelSatz(regeln[ri]);
+    var probleme = unmoeglichkeiten(regeln[ri]);
+    var w = el.querySelector(".unmoeglich");
+    if (probleme.length && !w) { zeichneAlles(); return; }
+    if (!probleme.length && w) { w.remove(); return; }
+    if (w) w.innerHTML = '<b>⚠️ Kann nie zutreffen.</b> ' + probleme.map(sicher).join(" ");
   });
 }
 
