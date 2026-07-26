@@ -75,8 +75,16 @@ export function baukastenSeite() {
   .schalter input:checked + .bahn::after { left:22px; }
 
   /* ---- Regel ---- */
-  .regel { border:1px solid var(--linie); border-radius:12px; padding:10px; margin-bottom:10px; background:var(--karte); }
-  .regelkopf { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+  .regel-huelle { position:relative; margin-bottom:10px; }
+  .regel-huelle .loeschgrund { position:absolute; inset:0; background:var(--rot-hell); color:var(--rot);
+    border-radius:12px; display:flex; align-items:center; justify-content:flex-end; padding-right:22px;
+    font-weight:700; font-size:.95rem; opacity:0; transition:opacity .12s; }
+  .regel-huelle.wischt .loeschgrund { opacity:1; }
+  .regel-huelle.reif .loeschgrund { background:var(--rot); color:#fff; }
+  .regel { position:relative; border:1px solid var(--linie); border-radius:12px; padding:10px; background:var(--karte); }
+  /* Nur die Kopfzeile ist wischbar – dort gibt es keine waagerechten Regler,
+     mit denen die Geste kollidieren könnte. */
+  .regelkopf { display:flex; align-items:center; gap:8px; margin-bottom:2px; touch-action:pan-y; }
   .regelkopf .emoji { font-size:1.3rem; }
   .regelkopf .name { flex:1; font-weight:700; font-size:1.02rem; border:0; background:none;
     color:var(--text); padding:1px 0; min-width:0; }
@@ -131,7 +139,11 @@ export function baukastenSeite() {
   .palette { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
   .palette .p-chip { flex:0 0 auto; border:1px dashed var(--linie); background:var(--hg); color:var(--text);
     border-radius:999px; padding:5px 10px; font-size:.82rem; cursor:grab; white-space:nowrap;
-    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+    transition:transform .12s;
+    /* pan-y: die Seite scrollt normal ueber die Chips hinweg. Gezogen wird erst
+       nach kurzem Halten - sonst waehlt man beim Scrollen versehentlich aus. */
+    touch-action:pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  .palette .p-chip.wartet { transform:scale(1.12); border-color:var(--akzent); color:var(--akzent); }
   .palette .p-chip.benutzt { opacity:.55; }
   .palette .p-chip.benutzt::after { content:" ✓"; font-weight:700; }
 
@@ -159,6 +171,11 @@ export function baukastenSeite() {
   #zieh-marke { position:fixed; z-index:61; pointer-events:none; background:var(--akzent); color:#fff;
     font-size:.62rem; font-weight:700; letter-spacing:.09em; padding:2px 7px; border-radius:5px; }
   #zieh-marke.voll { background:var(--rot); }
+  #zieh-abbruch { position:fixed; z-index:62; pointer-events:none; left:50%; top:10px;
+    transform:translateX(-50%); background:var(--karte); border:1px solid var(--linie);
+    color:var(--text2); border-radius:999px; padding:6px 14px; font-size:.78rem;
+    box-shadow:0 3px 12px rgba(0,0,0,.2); white-space:nowrap; }
+  #zieh-abbruch.bereit { background:var(--rot); border-color:var(--rot); color:#fff; }
 
   /* ---- Satz, Warnung, Treffer ---- */
   .satz { background:var(--akzent-hell); border-radius:9px; padding:6px 9px; margin-top:7px;
@@ -200,6 +217,9 @@ export function baukastenSeite() {
     <p class="hinweis" style="margin:0">Jeder <b>Baustein</b> ist eine Bedingung. <b>Alle</b> Bausteine müssen
     passen. Mit „+ oder“ legst du eine Alternative in denselben Baustein – dann reicht <b>eine</b> der Zeilen.
     Unten steht immer als Satz, was du gerade gebaut hast, und wie oft es wirklich zutrifft.</p>
+    <p class="hinweis" style="margin:7px 0 0">Einen ganzen Wunsch löschst du über „Löschen“ – oder indem du
+    seine <b>Kopfzeile weit nach links wischst</b> (mindestens eine halbe Kartenbreite, damit es nicht
+    aus Versehen passiert).</p>
   </section>
 
   <section class="karte">
@@ -449,7 +469,61 @@ function benutzteArten(quelle) {
 
 function zeichneRegeln() {
   var ziel = $("regeln"); ziel.innerHTML = "";
-  regeln.forEach(function (regel, ri) { ziel.appendChild(zeichneRegel(regel, ri)); });
+  regeln.forEach(function (regel, ri) {
+    var huelle = document.createElement("div"); huelle.className = "regel-huelle";
+    huelle.innerHTML = '<div class="loeschgrund">🗑️ Löschen</div>';
+    var karte = zeichneRegel(regel, ri);
+    huelle.appendChild(karte);
+    macheRegelWischbar(huelle, karte, karte.querySelector(".regelkopf"), function () { entferneRegel(ri); });
+    ziel.appendChild(huelle);
+  });
+}
+function entferneRegel(ri) {
+  regeln.splice(ri, 1);
+  if (!regeln.length) regeln = [ausVorlage(VORLAGEN[0])];
+  speichere(); zeichneAlles();
+}
+
+/* Wischen zum Löschen – bewusst schwergängig: erst ab der halben Kartenbreite
+   (mindestens 130 px) wird gelöscht, vorher federt die Karte zurück. */
+function macheRegelWischbar(huelle, karte, kopf, beiLoeschen) {
+  var startX = 0, startY = 0, dx = 0, aktiv = false, schwelle = 130;
+  kopf.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) return;
+    var z = e.target;
+    // Das Namensfeld füllt fast die ganze Kopfzeile – dort muss gewischt werden
+    // dürfen. Nur beim Bearbeiten (Feld hat den Fokus) und auf „Löschen“ nicht.
+    if (z.tagName === "BUTTON" || z === document.activeElement) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; aktiv = true;
+    schwelle = Math.max(130, karte.getBoundingClientRect().width * 0.5);
+    karte.style.transition = "";
+  }, { passive: true });
+  kopf.addEventListener("touchmove", function (e) {
+    if (!aktiv) return;
+    var x = e.touches[0].clientX - startX, y = e.touches[0].clientY - startY;
+    if (Math.abs(y) > Math.abs(x)) { aktiv = false; zurueck(); return; }   // wollte scrollen
+    dx = Math.min(0, x);
+    if (dx < -10) huelle.classList.add("wischt");
+    huelle.classList.toggle("reif", dx < -schwelle);
+    karte.style.transform = "translateX(" + dx + "px)";
+  }, { passive: true });
+  function zurueck() {
+    karte.style.transition = "transform .18s";
+    karte.style.transform = "translateX(0)";
+    huelle.classList.remove("wischt", "reif");
+  }
+  kopf.addEventListener("touchend", function (e) {
+    if (!aktiv) return; aktiv = false;
+    // Sonst landet der Fokus im Namensfeld und die Tastatur springt auf.
+    if (dx < -10 && e.cancelable) e.preventDefault();
+    if (dx < -schwelle) {
+      karte.style.transition = "transform .16s";
+      karte.style.transform = "translateX(-110%)";
+      setTimeout(beiLoeschen, 150);
+    } else zurueck();
+    dx = 0;
+  });
+  kopf.addEventListener("touchcancel", function () { if (aktiv) { aktiv = false; zurueck(); } });
 }
 
 function zeichneRegel(regel, ri) {
@@ -463,11 +537,7 @@ function zeichneRegel(regel, ri) {
   kopf.querySelector(".name").addEventListener("change", function () {
     regel.name = this.value.trim() || "Wunsch"; speichere(); hoereVorschau();
   });
-  kopf.querySelector("button").addEventListener("click", function () {
-    regeln.splice(ri, 1);
-    if (!regeln.length) regeln = [ausVorlage(VORLAGEN[0])];
-    speichere(); zeichneAlles();
-  });
+  kopf.querySelector("button").addEventListener("click", function () { entferneRegel(ri); });
   karte.appendChild(kopf);
 
   var bau = document.createElement("div"); bau.className = "bausteine";
@@ -497,8 +567,8 @@ function zeichneRegel(regel, ri) {
         speichere(); zeichneAlles();
       });
       chip.addEventListener("pointerdown", function (e) {
-        starteZiehen(e, { typ: "palette", art: art, regel: regel, regelIndex: ri },
-                     ARTEN[art].emoji + " " + ARTEN[art].bez);
+        chipStart(e, { typ: "palette", art: art, regel: regel, regelIndex: ri },
+                  ARTEN[art].emoji + " " + ARTEN[art].bez);
       });
       palette.appendChild(chip);
     });
@@ -506,7 +576,7 @@ function zeichneRegel(regel, ri) {
     var wink = document.createElement("p"); wink.className = "hinweis"; wink.style.margin = "2px 0 0";
     // Im einfachen Modus nicht mit Ziehen werben – das gibt es dort nicht.
     wink.textContent = erweitert
-      ? "Antippen hängt an. Ziehen: auf einen Baustein = oder, dazwischen = und."
+      ? "Antippen hängt an. Kurz halten und ziehen: auf einen Baustein = oder, dazwischen = und."
       : "Antippen hängt einen Baustein an (muss zusätzlich passen).";
     karte.appendChild(wink);
   }
@@ -570,8 +640,8 @@ function zeichneBaustein(regel, baustein, bi, regelNummer) {
       + (zeigeOder ? '<button class="oder-knopf" type="button">+ oder</button>' : "")
       + '<button class="weg" type="button" title="Entfernen" aria-label="Entfernen">✕</button>';
     if (erweitert) kopf.querySelector(".griff").addEventListener("pointerdown", function (e) {
-      starteZiehen(e, { typ: "teil", regel: regel, regelIndex: regelNummer, baustein: baustein, ti: ti },
-                   art.emoji + " " + art.bez);
+      anfasserStart(e, { typ: "teil", regel: regel, regelIndex: regelNummer, baustein: baustein, ti: ti },
+                    art.emoji + " " + art.bez);
     });
     if (zeigeOder) kopf.querySelector(".oder-knopf").addEventListener("click", function () {
       zeigeArtWahl({ baustein: baustein });
@@ -692,27 +762,70 @@ function zeigeArtWahl(ziel) {
    vorhandene Zeile am Anfasser ⠿. Wohin man loslässt, entscheidet:
      auf einen Baustein   -> die Zeile wird dort zur Alternative (oder)
      zwischen Bausteine   -> die Zeile wird ein eigener Baustein (und)
-   Die Anfasser haben touch-action:none, deshalb gerät das Ziehen nie mit dem
-   Scrollen der Seite in Konflikt – kein Langdruck nötig.                  */
-var zieht = null, zuletztGezogen = false, rollTimer = null;
+   Zwei Wege hinein, je nach Verwechslungsgefahr:
+     Anfasser ⠿  – touch-action:none, zieht sofort. Ein eigener Greifpunkt,
+                   den man nicht zufällig trifft.
+     Chip        – touch-action:pan-y, die Seite scrollt also ganz normal
+                   darüber hinweg. Gezogen wird erst nach kurzem Halten,
+                   damit beim Scrollen nichts versehentlich mitgeht.        */
+var zieht = null, zuletztGezogen = false, rollTimer = null, langTimer = null;
+var HALTEN_MS = 220;
 
-function starteZiehen(e, quelle, beschriftung) {
+/* Anfasser: sofort. */
+function anfasserStart(e, quelle, beschriftung) {
+  if (e.button > 0) return;
+  starteZiehen(e.currentTarget, e, quelle, beschriftung, false);
+}
+
+/* Chip: erst nach kurzem Halten – und nur, wenn der Finger dabei ruhig bleibt. */
+function chipStart(e, quelle, beschriftung) {
   if (!erweitert || e.button > 0 || zieht) return;
-  // KEIN preventDefault hier: auf iOS würde das den anschließenden Klick
-  // unterdrücken, und Antippen soll weiter funktionieren. Gegen das Scrollen
-  // hilft touch-action in der CSS, nicht preventDefault.
+  var el = e.currentTarget, id = e.pointerId, x = e.clientX, y = e.clientY;
+  el.classList.add("wartet");
+  function aufraeumen() {
+    clearTimeout(langTimer); langTimer = null;
+    el.classList.remove("wartet");
+    document.removeEventListener("pointermove", pruefeRuhe);
+    document.removeEventListener("pointerup", aufraeumen);
+    document.removeEventListener("pointercancel", aufraeumen);
+  }
+  function pruefeRuhe(ev) {
+    if (Math.abs(ev.clientX - x) > 8 || Math.abs(ev.clientY - y) > 8) aufraeumen();  // scrollt
+  }
+  document.addEventListener("pointermove", pruefeRuhe);
+  document.addEventListener("pointerup", aufraeumen);
+  document.addEventListener("pointercancel", aufraeumen);
+  langTimer = setTimeout(function () {
+    aufraeumen();
+    starteZiehen(el, { pointerId: id, clientX: x, clientY: y }, quelle, beschriftung, true);
+  }, HALTEN_MS);
+}
+
+function starteZiehen(el, e, quelle, beschriftung, sofort) {
+  if (!erweitert || zieht) return;
+  // KEIN preventDefault beim Drücken: auf iOS würde das den anschließenden
+  // Klick unterdrücken, und Antippen soll weiter funktionieren.
   // Zeiger einfangen, sonst verliert iOS die Bewegung, sobald der Finger das
   // kleine Element verlässt.
-  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (f) {}
-  // startX/startY: Ein reines Antippen (ohne Bewegung) darf kein Ziehen sein,
-  // sonst schluckt es den Klick auf den Chip.
-  zieht = { quelle: quelle, ziel: null, zeiger: e.pointerId,
+  try { el.setPointerCapture(e.pointerId); } catch (f) {}
+  zieht = { quelle: quelle, ziel: null, zeiger: e.pointerId, beschriftung: beschriftung,
             startX: e.clientX, startY: e.clientY, bewegt: false };
-  zieht.beschriftung = beschriftung;
   document.addEventListener("pointermove", beiZiehen, { passive: false });
   document.addEventListener("pointerup", beendeZiehen);
   document.addEventListener("pointercancel", brichZiehenAb);
+  // Chips dürfen laut touch-action senkrecht scrollen; sobald wirklich gezogen
+  // wird, muss das unterbunden werden – das geht nur über touchmove.
+  document.addEventListener("touchmove", haltScrollenAn, { passive: false });
+  document.addEventListener("keydown", beiTaste);
+  if (sofort) {
+    zieht.bewegt = true;
+    zeigeGeist(); bewegeGeist(e.clientX, e.clientY);
+    zieht.ziel = findeAblegeZiel(e.clientX, e.clientY);
+    zeigeZiel();
+  }
 }
+function haltScrollenAn(e) { if (zieht && zieht.bewegt) e.preventDefault(); }
+function beiTaste(e) { if (e.key === "Escape") brichZiehenAb(); }
 function regelnBausteinIndex(regel, baustein) { return (regel.bausteine || []).indexOf(baustein); }
 
 /* Der mitlaufende Chip entsteht erst bei echter Bewegung – beim bloßen
@@ -724,6 +837,10 @@ function zeigeGeist() {
   geist.textContent = zieht.beschriftung;
   document.body.appendChild(geist);
   zieht.geist = geist;
+  // Rückzieher: hier ablegen (oder Esc) lässt alles, wie es war.
+  var abbruch = document.createElement("div"); abbruch.id = "zieh-abbruch";
+  abbruch.innerHTML = '<b>✕</b> Hierher ziehen zum Abbrechen';
+  document.body.appendChild(abbruch);
   if (quelle.typ === "teil") {
     var reihen = document.querySelectorAll('.regel[data-regel="' + quelle.regelIndex + '"] .baustein[data-baustein="'
       + regelnBausteinIndex(quelle.regel, quelle.baustein) + '"] .teil');
@@ -764,6 +881,14 @@ function rolleAmRand(y) {
 function findeAblegeZiel(x, y) {
   var karte = document.querySelector('.regel[data-regel="' + zieht.quelle.regelIndex + '"]');
   if (!karte) return null;
+  // Über dem Abbruch-Feld oder weit weg von der Regel: nichts tun.
+  var feld = $("zieh-abbruch");
+  if (feld) {
+    var f = feld.getBoundingClientRect();
+    if (y >= f.top - 12 && y <= f.bottom + 12 && x >= f.left - 24 && x <= f.right + 24) return { modus: "abbruch" };
+  }
+  var kr = karte.getBoundingClientRect();
+  if (y < kr.top - 90 || y > kr.bottom + 90) return { modus: "abbruch" };
   var regel = zieht.quelle.regel;
   var kaesten = Array.prototype.slice.call(karte.querySelectorAll(".baustein"));
   if (!kaesten.length) return { modus: "und", vorBaustein: null };
@@ -791,7 +916,10 @@ function zeigeZiel() {
   var ziel = zieht.ziel; if (!ziel) return;
   var regel = zieht.quelle.regel;
   var karte = document.querySelector('.regel[data-regel="' + zieht.quelle.regelIndex + '"]');
+  var feld = $("zieh-abbruch");
+  if (feld) feld.classList.toggle("bereit", ziel.modus === "abbruch");
 
+  if (ziel.modus === "abbruch") { ziel.erlaubt = false; return; }
   if (ziel.modus === "oder") {
     var eigener = zieht.quelle.typ === "teil" && zieht.quelle.baustein === ziel.baustein;
     var passtNoch = ziel.baustein.teile.length < MAX_ALTERNATIVEN;
@@ -847,11 +975,15 @@ function raeumeZiehenAuf() {
   document.removeEventListener("pointermove", beiZiehen);
   document.removeEventListener("pointerup", beendeZiehen);
   document.removeEventListener("pointercancel", brichZiehenAb);
+  document.removeEventListener("touchmove", haltScrollenAn);
+  document.removeEventListener("keydown", beiTaste);
   clearInterval(rollTimer); rollTimer = null;
   if (zieht && zieht.geist) zieht.geist.remove();
   var l = $("zieh-linie"); if (l) l.remove();
   var m = $("zieh-marke"); if (m) m.remove();
-  Array.prototype.forEach.call(document.querySelectorAll(".wandert"), function (el) { el.classList.remove("wandert"); });
+  var ab = $("zieh-abbruch"); if (ab) ab.remove();
+  Array.prototype.forEach.call(document.querySelectorAll(".wandert, .wartet"), function (el) {
+    el.classList.remove("wandert"); el.classList.remove("wartet"); });
   Array.prototype.forEach.call(document.querySelectorAll(".baustein"), function (k) {
     k.classList.remove("ziel-oder", "ziel-voll");
   });
@@ -862,6 +994,7 @@ function raeumeZiehenAuf() {
 /* Führt die Ablage aus. Arbeitet mit Objekt-Verweisen statt Indizes, damit das
    Entfernen der Quelle die Zielposition nicht verschiebt. */
 function legeAb(quelle, ziel) {
+  if (!ziel || ziel.modus === "abbruch") return false;
   var regel = quelle.regel, teil;
   if (quelle.typ === "palette") {
     if (ziel.modus === "und" && regel.bausteine.length >= MAX_BAUSTEINE) return false;
