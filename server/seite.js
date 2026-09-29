@@ -33,6 +33,7 @@ export function appSeite(vapidPublic) {
     --gruen:#15803d; --gruen-hell:#e6f4ea; --rot:#b91c1c; --rot-hell:#fdeaea;
     --glas:rgba(255,255,255,.45); --glas-linie:rgba(255,255,255,.6);
     --glas-tief:rgba(255,255,255,.62); --glas-nav:rgba(255,255,255,.72);
+    --gelb-hell:#fdf4e3; --gelb:#8a6414;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -40,7 +41,8 @@ export function appSeite(vapidPublic) {
             --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
             --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
             --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
-            --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7); }
+            --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7);
+            --gelb-hell:#2b2416; --gelb:#e3b95f; }
   }
   :root[data-theme="dark"] {
     --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
@@ -48,6 +50,7 @@ export function appSeite(vapidPublic) {
     --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
     --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
     --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7);
+    --gelb-hell:#2b2416; --gelb:#e3b95f;
   }
 
   /* ---- Himmel-Hintergrund (Verlauf + gezeichnetes Wetter) ---- */
@@ -423,7 +426,8 @@ function speichere() { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); 
 function runde(w) { return Math.round(parseFloat(w) * 10) / 10; }
 function $(id) { return document.getElementById(id); }
 function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-var letzteTreffer = null, letzteTage = [], letzteStunden = null, offeneTage = {}, offeneEditoren = {};
+var letzteTreffer = null, letzteKnapp = null, letzteTage = [], letzteStunden = null,
+    offeneTage = {}, offeneEditoren = {};
 var letzteSonne = null, letzteVersatz = 0;
 
 /* Reiter */
@@ -817,7 +821,12 @@ function trefferHtml(i, regel) {
   if (!zustand.ort) return '<div class="kein-treffer">Wähle zuerst deinen Ort.</div>';
   if (!letzteTreffer) return '<div class="kein-treffer">Prüfe …</div>';
   var liste = letzteTreffer[i] || [];
-  if (!liste.length) return '<div class="kein-treffer">Kein Treffer im Fenster von ' + fensterText(regel.zeitfensterStunden || 48) + '.</div>';
+  if (!liste.length) {
+    // Kein Treffer: zeigen, woran es am wenigsten gefehlt hat – vielleicht war
+    // es nur haarscharf daneben und man macht trotzdem Pizza.
+    return '<div class="kein-treffer">Kein Treffer im Fenster von ' + fensterText(regel.zeitfensterStunden || 48) + '.</div>'
+      + knappHtml(letzteKnapp ? letzteKnapp[i] : null);
+  }
   return liste.map(function (t) { return '<div class="treffer">✔️ ' + sicher(t.text) + '</div>'; }).join("");
 }
 function fensterText(h) { for (var k = 0; k < FENSTER_OPTIONEN.length; k++) if (FENSTER_OPTIONEN[k][0] === h) return FENSTER_OPTIONEN[k][1]; return h + " Std."; }
@@ -899,7 +908,8 @@ function zeichneAlles() { zeichneRegeln(); zeichneVorlagen(); aktualisiereVorsch
 function vorschauLangsam() { aktualisiereVorschauLangsam(); syncWennAktiv(); }
 function wetterCacheKey() { return zustand.ort ? "wwCache_" + zustand.ort.lat + "," + zustand.ort.lon : null; }
 function anwendeVorschau(d) {
-  letzteTreffer = d.treffer; letzteTage = d.tage || []; letzteStunden = d.stunden || null;
+  letzteTreffer = d.treffer; letzteKnapp = d.knapp || null;
+  letzteTage = d.tage || []; letzteStunden = d.stunden || null;
   if (d.sonne) letzteSonne = d.sonne;
   if (d.versatz != null) letzteVersatz = d.versatz;
   Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
@@ -915,7 +925,7 @@ function aktualisiereVorschau() {
     body:JSON.stringify({ lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln }) })
   .then(function (a) { return a.json(); }).then(function (d) {
     if (!d || !d.ok) throw new Error((d && d.fehler) || "unbekannt");
-    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, tage: d.tage, stunden: d.stunden, sonne: d.sonne, versatz: d.versatz })); } catch (e) {}
+    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, knapp: d.knapp, tage: d.tage, stunden: d.stunden, sonne: d.sonne, versatz: d.versatz })); } catch (e) {}
     anwendeVorschau(d);
   }).catch(function (f) {
     // Bei Fehler die zuletzt gespeicherte Vorschau zeigen (macht die App unabhängiger)

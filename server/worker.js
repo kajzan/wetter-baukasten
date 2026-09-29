@@ -7,7 +7,7 @@
  *   GET  /icon.svg          -> App-Symbol
  *   GET  /api/status        -> Lebenszeichen
  *   GET  /api/vapid-public  -> öffentlicher VAPID-Schlüssel
- *   POST /api/vorschau      -> Regel-Treffer + 4-Tage-Wetter (dieselbe Logik wie der Wächter)
+ *   POST /api/vorschau      -> Regel-Treffer (+ Beinahe-Treffer) + Wetter (dieselbe Logik wie der Wächter)
  *   POST /api/aktivieren    -> Abo + Ort + Regeln speichern, Bestätigungs-Push
  *   POST /api/deaktivieren  -> Abo austragen
  *   Zeitplan (stündlich)    -> Wetter prüfen, bei Treffern Push senden (mit Doppel-Schutz)
@@ -26,7 +26,7 @@
  */
 
 import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
-         normalisiereRegeln, rundeKoordinate } from "./logik.js";
+         normalisiereRegeln, rundeKoordinate, findeKnapp } from "./logik.js";
 import { sendeWebPush } from "./webpush.js";
 import { appSeite } from "./seite.js";
 import { baukastenSeite } from "./baukasten.js";
@@ -177,14 +177,19 @@ export default {
       try {
         const vorhersage = await holeVorhersageGecacht(lat, lon, env);
         const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
-        const treffer = regeln.map((regel) => {
+        const knapp = [];
+        const treffer = regeln.map((regel, i) => {
+          knapp[i] = null;
           if (!regel.aktiv) return [];
           const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
-          return Object.keys(gefunden).sort().map((datum) => ({
+          const liste = Object.keys(gefunden).sort().map((datum) => ({
             datum, text: blockZuText(datum, gefunden[datum]),
           }));
+          // Kein Treffer? Dann erklären, woran es am wenigsten gefehlt hat.
+          if (!liste.length) knapp[i] = findeKnapp(regel, vorhersage, jetztLokalMs);
+          return liste;
         });
-        return jsonAntwort({ ok: true, treffer, tage: tagesZusammenfassung(vorhersage),
+        return jsonAntwort({ ok: true, treffer, knapp, tage: tagesZusammenfassung(vorhersage),
           stunden: vorhersage.hourly, sonne: vorhersage.daily || null,
           versatz: vorhersage.utc_offset_seconds ?? 0 });
       } catch (f) {

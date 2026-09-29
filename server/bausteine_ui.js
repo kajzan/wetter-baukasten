@@ -125,6 +125,14 @@ export const BAUSTEINE_CSS = `
   .treffer { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:5px 9px;
     margin-top:5px; font-size:.83rem; }
   .kein-treffer { color:var(--text2); font-size:.81rem; margin-top:6px; }
+  /* „Woran hat es gelegen?“ – der knappste Beinahe-Treffer */
+  .knapp { background:var(--gelb-hell); color:var(--gelb); border-radius:8px;
+    padding:6px 9px; margin-top:5px; font-size:.81rem; line-height:1.45; }
+  .knapp .wann { font-weight:700; display:block; margin-bottom:2px; }
+  .knapp ul { margin:0; padding-left:17px; }
+  .knapp li { margin:1px 0; }
+  .knapp .luecke { font-weight:700; white-space:nowrap; }
+  .knapp .fast { color:var(--gruen); }
   .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:7px 10px;
     font-size:.83rem; margin-top:6px; }`;
 
@@ -192,6 +200,44 @@ function vereinfacheBausteine(bausteine) {
     eintrag.zusammengefasst = true;
   });
   return liste;
+}
+
+/* ---------- „Woran hat es gelegen?“ ----------
+   Der Dienst liefert zu jeder Regel ohne Treffer den knappsten Beinahe-Fall.
+   Hier wird daraus ein lesbarer Hinweis: was fehlte, und um wie viel. So
+   sieht man, ob es nur haarscharf daneben war. */
+function luecken(abstand, art) {
+  var a = ARTEN[art];
+  var e = a && a.einheit ? " " + a.einheit : "";
+  return zahlText(abstand) + e;
+}
+function grundZeile(g) {
+  var a = ARTEN[g.art] || { bez: g.art, emoji: "•", einheit: "" };
+  var e = a.einheit ? " " + a.einheit : "";
+  if (g.art === "windrichtung") {
+    return a.emoji + " <b>" + a.bez + "</b> – Wind kommt aus "
+      + (g.ist ? sicher(g.ist) : "unbekannter Richtung")
+      + ", gebraucht: " + sicher((g.sektoren || []).join("/"));
+  }
+  var abstand = Math.abs(g.ist - g.grenze);
+  /* „Haarscharf“ heißt: gemessen an der Grenze selbst nur ein Zehntel daneben
+     (bei Grenzen um null greift ein kleiner Anteil der Skala). */
+  var knappDran = abstand <= Math.max((a.max - a.min) * 0.02, Math.abs(g.grenze) * 0.1);
+  var wort = g.richtung === "min" ? "zu wenig" : "zu viel";
+  return a.emoji + " <b>" + a.bez + " " + zahlText(g.ist) + e + "</b> – "
+    + '<span class="luecke' + (knappDran ? " fast" : "") + '">' + luecken(abstand, g.art) + " " + wort + "</span>"
+    + " (" + (g.richtung === "min" ? "mindestens " : "höchstens ") + zahlText(g.grenze) + e + ")";
+}
+function knappHtml(knapp) {
+  if (!knapp) return "";
+  if (knapp.dauer) {
+    return '<div class="knapp"><span class="wann">Am nächsten dran: ' + sicher(knapp.wann) + '</span>'
+      + "Da würde alles passen – aber nur " + knapp.dauer + (knapp.dauer === 1 ? " Stunde" : " Stunden")
+      + " am Stück. Gebraucht werden " + knapp.gebraucht + ".</div>";
+  }
+  if (!knapp.fehlend || !knapp.fehlend.length) return "";
+  return '<div class="knapp"><span class="wann">Am nächsten dran: ' + sicher(knapp.wann) + '</span><ul><li>'
+    + knapp.fehlend.map(grundZeile).join("</li><li>") + "</li></ul></div>";
 }
 
 function regelSatz(regel) {

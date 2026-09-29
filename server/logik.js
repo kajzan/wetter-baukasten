@@ -158,6 +158,134 @@ export function normalisiereBausteine(roh) {
   return bausteine.length ? bausteine : null;
 }
 
+/* ===================================================================
+   „Woran hat es gelegen?“ – Beinahe-Treffer erklären
+   ===================================================================
+   Wenn eine Regel nicht zutrifft, ist die interessante Frage: was genau hat
+   gefehlt, und wie knapp war es? Dafür suchen wir die Stunde im Vorschau-
+   Fenster, die am wenigsten danebenliegt, und sagen für jeden gescheiterten
+   Baustein, um wie viel er verfehlt wurde.                               */
+
+/* Wie weit ist eine einzelne Alternative daneben? abstand in der Einheit des
+   Werts; bei der Windrichtung gibt es keinen Abstand (Infinity). */
+export function teilAbstand(teil, werte) {
+  const art = BAUSTEIN_ARTEN[teil?.art];
+  if (!art) return { passt: false, abstand: Infinity, grund: null };
+  if (teil.art === "windrichtung") {
+    if (teilPasst(teil, werte)) return { passt: true, abstand: 0, grund: null };
+    const grad = werte.windDir;
+    return { passt: false, abstand: Infinity, grund: { art: "windrichtung",
+      ist: (grad === null || grad === undefined) ? null : windSektor(grad),
+      sektoren: Array.isArray(teil.sektoren) ? teil.sektoren.slice() : [] } };
+  }
+  const wert = werte[art.wert];
+  if (wert === null || wert === undefined) return { passt: false, abstand: Infinity, grund: null };
+  if (teil.min !== undefined && teil.min !== null && wert < teil.min) {
+    return { passt: false, abstand: teil.min - wert,
+             grund: { art: teil.art, ist: wert, grenze: teil.min, richtung: "min" } };
+  }
+  if (teil.max !== undefined && teil.max !== null && wert > teil.max) {
+    return { passt: false, abstand: wert - teil.max,
+             grund: { art: teil.art, ist: wert, grenze: teil.max, richtung: "max" } };
+  }
+  return { passt: true, abstand: 0, grund: null };
+}
+
+/* Ein Baustein zählt als erfüllt, sobald EINE Alternative passt. Scheitert er,
+   melden wir die Alternative, die am wenigsten fehlt. */
+export function bausteinAbstand(baustein, werte) {
+  const teile = Array.isArray(baustein?.teile) ? baustein.teile : [];
+  if (!teile.length) return { passt: true, abstand: 0, grund: null };
+  let beste = null;
+  for (const teil of teile) {
+    const a = teilAbstand(teil, werte);
+    if (a.passt) return { passt: true, abstand: 0, grund: null };
+    if (!beste || a.abstand < beste.abstand) beste = a;
+  }
+  return beste;
+}
+
+/* Abstände verschiedener Größen vergleichbar machen (Anteil der Spannweite). */
+function relativerAbstand(art, abstand) {
+  const a = BAUSTEIN_ARTEN[art];
+  if (!a || !Number.isFinite(abstand) || a.max === undefined) return 1;
+  const spanne = (a.max - a.min) || 1;
+  return Math.min(1, abstand / spanne);
+}
+
+function werteDerStunde(stunden, i) {
+  const kern = [stunden.temperature_2m[i], stunden.wind_speed_10m[i], stunden.precipitation[i],
+                stunden.cloud_cover[i], stunden.relative_humidity_2m[i]];
+  if (kern.some((w) => w === null || w === undefined)) return null;
+  return { temp: kern[0], wind: kern[1], regen: kern[2], wolken: kern[3], feuchte: kern[4],
+           windDir: stunden.wind_direction_10m ? stunden.wind_direction_10m[i] : undefined,
+           uv: stunden.uv_index ? stunden.uv_index[i] : undefined,
+           boe: stunden.wind_gusts_10m ? stunden.wind_gusts_10m[i] : undefined };
+}
+
+function zeitpunktText(zeitMs) {
+  const d = new Date(zeitMs);
+  const tag = d.toISOString().slice(0, 10);
+  return `${WOCHENTAGE[d.getUTCDay()]}, ${tag.slice(8, 10)}.${tag.slice(5, 7)}., ${d.getUTCHours()} Uhr`;
+}
+
+/* Sucht die Stunde, die der Regel am nächsten kommt.
+   Rückgabe (oder null, wenn es gar keine prüfbare Stunde gibt):
+     { wann, fehlend:[ {art, ist, grenze, richtung} | {art:"windrichtung", ist, sektoren} ] }
+     { wann, dauer, gebraucht }   – alles passt, aber nicht lang genug am Stück */
+export function findeKnapp(regel, vorhersage, jetztLokalMs) {
+  const bausteine = Array.isArray(regel.bausteine) && regel.bausteine.length
+    ? regel.bausteine : bausteineAusBedingungen(regel.bedingungen ?? {});
+  if (!bausteine.length) return null;                 // Regel ohne Bedingungen
+  const stunden = vorhersage.hourly;
+  const fensterEndeMs = jetztLokalMs + (regel.zeitfensterStunden ?? 48) * STUNDE_MS;
+  const vonUhr = regel.nurVonUhr ?? 0;
+  const bisUhr = regel.nurBisUhr ?? 24;
+  const mindest = regel.mindestdauerStunden ?? 2;
+
+  let beste = null;                 // knappester Fehlschlag
+  let laufJetzt = 0, laengsterLauf = 0, ersteGutStunde = null;
+  let letzteZeitMs = null;
+
+  for (let i = 0; i < stunden.time.length; i++) {
+    const zeitMs = Date.parse(stunden.time[i] + ":00Z");
+    if (zeitMs < jetztLokalMs || zeitMs > fensterEndeMs) continue;
+    const uhr = new Date(zeitMs).getUTCHours();
+    if (!(vonUhr <= uhr && uhr < bisUhr)) continue;
+    const werte = werteDerStunde(stunden, i);
+    if (!werte) continue;
+
+    const fehlend = [];
+    let punkte = 0;
+    for (const baustein of bausteine) {
+      const a = bausteinAbstand(baustein, werte);
+      if (a.passt) continue;
+      if (a.grund) fehlend.push(a.grund);
+      punkte += 1 + relativerAbstand(a.grund && a.grund.art, a.abstand);
+    }
+
+    if (!fehlend.length) {
+      // Diese Stunde passt – nur die Dauer könnte noch scheitern.
+      laufJetzt = (letzteZeitMs !== null && zeitMs - letzteZeitMs === STUNDE_MS) ? laufJetzt + 1 : 1;
+      if (laufJetzt > laengsterLauf) { laengsterLauf = laufJetzt; }
+      if (ersteGutStunde === null) ersteGutStunde = zeitMs;
+    } else {
+      laufJetzt = 0;
+      if (!beste || punkte < beste.punkte) beste = { zeitMs, punkte, fehlend };
+    }
+    letzteZeitMs = zeitMs;
+  }
+
+  // Gibt es einen ausreichend langen Block, trifft die Regel zu – dann ist
+  // hier nichts zu erklären.
+  if (laengsterLauf >= mindest) return null;
+  if (laengsterLauf > 0) {
+    return { wann: zeitpunktText(ersteGutStunde), dauer: laengsterLauf, gebraucht: mindest };
+  }
+  if (!beste) return null;
+  return { wann: zeitpunktText(beste.zeitMs), fehlend: beste.fehlend };
+}
+
 /* Sucht pro Tag den ersten ausreichend langen Zeitblock, der zur Regel passt.
    Rückgabe: { "JJJJ-MM-TT": [ { zeitMs, werte:[temp,wind,regen,wolken,feuchte,windDir,uv] } ] } */
 export function findeTreffer(regel, vorhersage, jetztLokalMs) {

@@ -299,7 +299,11 @@ function hoereVorschau() {
     if (!d.ok) { zeigeFehler(d.fehler || "Unbekannter Fehler."); return; }
     (d.treffer || []).forEach(function (liste, ri) {
       var ziel = document.querySelector('[data-treffer="' + ri + '"]'); if (!ziel) return;
-      if (!liste.length) { ziel.innerHTML = '<div class="kein-treffer">Kein Treffer im gewählten Vorschau-Zeitraum.</div>'; return; }
+      if (!liste.length) {
+        ziel.innerHTML = '<div class="kein-treffer">Kein Treffer im gewählten Vorschau-Zeitraum.</div>'
+          + knappHtml(d.knapp ? d.knapp[ri] : null);
+        return;
+      }
       ziel.innerHTML = liste.map(function (t) { return '<div class="treffer">✔️ ' + sicher(t.text) + '</div>'; }).join("");
     });
   })
