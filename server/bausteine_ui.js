@@ -133,6 +133,20 @@ export const BAUSTEINE_CSS = `
   .knapp li { margin:1px 0; }
   .knapp .luecke { font-weight:700; white-space:nowrap; }
   .knapp .fast { color:var(--gruen); }
+  /* Tage ohne Treffer in der Tagesübersicht: zurückhaltend, damit die
+     passenden (grünen) Tage ins Auge fallen */
+  .stand-kopf { color:var(--text2); font-size:.81rem; margin-top:7px; font-weight:600; }
+  .tag-nein { border:1px solid var(--linie); color:var(--text2); border-radius:8px;
+    padding:6px 9px; margin-top:5px; font-size:.81rem; line-height:1.45; }
+  .tag-nein .wann { font-weight:700; display:block; margin-bottom:2px; color:var(--text); }
+  .tag-nein ul { margin:0; padding-left:17px; }
+  .tag-nein li { margin:1px 0; }
+  .tag-nein .luecke { font-weight:700; white-space:nowrap; color:var(--gelb); }
+  .tag-nein .fast { color:var(--gruen); }
+  .tag-nein.knapp { border-color:transparent; color:var(--gelb); }
+  .tag-nein.knapp .wann { color:var(--gelb); }
+  .am-knappsten { font-size:.72rem; font-weight:700; background:var(--karte); border-radius:99px;
+    padding:1px 7px; margin-left:4px; white-space:nowrap; }
   .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:7px 10px;
     font-size:.83rem; margin-top:6px; }`;
 
@@ -238,6 +252,39 @@ function knappHtml(knapp) {
   if (!knapp.fehlend || !knapp.fehlend.length) return "";
   return '<div class="knapp"><span class="wann">Am nächsten dran: ' + sicher(knapp.wann) + '</span><ul><li>'
     + knapp.fehlend.map(grundZeile).join("</li><li>") + "</li></ul></div>";
+}
+
+/* ---------- Tag für Tag: welche Tage gehen, woran scheitern die anderen? ----------
+   stand = [ {datum, treffer:"…"} | {datum, knapp:{…}} ] (vom Dienst, chronologisch).
+   kopf = Satz für den Fall, dass kein einziger Tag passt.
+   knappGesamt = der knappste Beinahe-Treffer im ganzen Fenster (wird hervorgehoben). */
+var TAGNAMEN = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+function tagName(datum) {
+  var d = new Date(datum + "T00:00:00Z");
+  return TAGNAMEN[d.getUTCDay()] + ", " + datum.slice(8, 10) + "." + datum.slice(5, 7) + ".";
+}
+function standHtml(stand, kopf, knappGesamt) {
+  var gut = stand.filter(function (t) { return t.treffer; }).length;
+  var html = gut
+    ? '<div class="stand-kopf">' + (gut === stand.length
+        ? (gut === 1 ? "Passt am einzigen Tag im Fenster." : "Passt an allen " + gut + " Tagen.")
+        : "Passt an " + gut + " von " + stand.length + " Tagen.") + "</div>"
+    : '<div class="kein-treffer">' + kopf + "</div>";
+  return html + stand.map(function (t) {
+    if (t.treffer) return '<div class="treffer">✔️ ' + sicher(t.treffer) + "</div>";
+    var k = t.knapp;
+    var besonders = !gut && knappGesamt && knappGesamt.wann === k.wann;
+    var kopfzeile = '<span class="wann">' + tagName(t.datum) + " – passt nicht"
+      + (besonders ? ' <span class="am-knappsten">am knappsten</span>' : "") + "</span>";
+    if (k.dauer) {
+      return '<div class="tag-nein' + (besonders ? " knapp" : "") + '">' + kopfzeile
+        + "Ab " + k.uhr + " Uhr passt alles – aber nur " + k.dauer + (k.dauer === 1 ? " Stunde" : " Stunden")
+        + " am Stück. Gebraucht werden " + k.gebraucht + ".</div>";
+    }
+    return '<div class="tag-nein' + (besonders ? " knapp" : "") + '">' + kopfzeile
+      + "Am nächsten dran um " + k.uhr + " Uhr:<ul><li>"
+      + (k.fehlend || []).map(grundZeile).join("</li><li>") + "</li></ul></div>";
+  }).join("");
 }
 
 function regelSatz(regel) {

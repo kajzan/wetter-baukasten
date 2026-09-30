@@ -26,7 +26,7 @@
  */
 
 import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
-         normalisiereRegeln, rundeKoordinate, findeKnapp } from "./logik.js";
+         normalisiereRegeln, rundeKoordinate, findeKnapp, tagesStand } from "./logik.js";
 import { sendeWebPush } from "./webpush.js";
 import { appSeite } from "./seite.js";
 import { baukastenSeite } from "./baukasten.js";
@@ -138,6 +138,14 @@ const MANIFEST = JSON.stringify({
   icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
 });
 
+/* Wann wurde diese Fassung veröffentlicht? Kommt von Cloudflare (siehe
+   wrangler.jsonc, version_metadata). Nur Ziffern/Zeitzeichen durchlassen,
+   weil der Wert direkt in die Seite geschrieben wird. */
+function appStand(env) {
+  const zeit = env.CF_VERSION_METADATA && env.CF_VERSION_METADATA.timestamp;
+  return typeof zeit === "string" && /^[0-9T:.Z+-]{10,40}$/.test(zeit) ? zeit : "";
+}
+
 export default {
   async fetch(anfrage, env, ctx) {
     const url = new URL(anfrage.url);
@@ -148,7 +156,7 @@ export default {
     if (anfrage.method === "GET") {
       // no-cache: die Seiten aendern sich haeufig, sonst zeigt der Browser
       // (vor allem Safari) noch tagelang die alte Fassung.
-      if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC), {
+      if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC, appStand(env)), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
       // Versuchsfeld für die neue Regelform (nirgends verlinkt, kein Push)
       if (pfad === "/baukasten") return new Response(baukastenSeite(), {
@@ -161,7 +169,7 @@ export default {
         headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" } });
       if (pfad === "/api/status") return jsonAntwort({
         dienst: "wetter-waechter", phase: 2, status: "ok",
-        speicher: Boolean(env.SPEICHER), zeit: new Date().toISOString() });
+        speicher: Boolean(env.SPEICHER), stand: appStand(env), zeit: new Date().toISOString() });
       if (pfad === "/api/vapid-public") return jsonAntwort({ vapidPublic: VAPID_PUBLIC });
     }
 
@@ -177,9 +185,9 @@ export default {
       try {
         const vorhersage = await holeVorhersageGecacht(lat, lon, env);
         const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
-        const knapp = [];
+        const knapp = [], stand = [];
         const treffer = regeln.map((regel, i) => {
-          knapp[i] = null;
+          knapp[i] = null; stand[i] = [];
           if (!regel.aktiv) return [];
           const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
           const liste = Object.keys(gefunden).sort().map((datum) => ({
@@ -187,9 +195,11 @@ export default {
           }));
           // Kein Treffer? Dann erklären, woran es am wenigsten gefehlt hat.
           if (!liste.length) knapp[i] = findeKnapp(regel, vorhersage, jetztLokalMs);
+          // Und Tag für Tag: welche Tage gehen, woran scheitern die anderen?
+          stand[i] = tagesStand(regel, vorhersage, jetztLokalMs, liste);
           return liste;
         });
-        return jsonAntwort({ ok: true, treffer, knapp, tage: tagesZusammenfassung(vorhersage),
+        return jsonAntwort({ ok: true, treffer, knapp, stand, tage: tagesZusammenfassung(vorhersage),
           stunden: vorhersage.hourly, sonne: vorhersage.daily || null,
           versatz: vorhersage.utc_offset_seconds ?? 0 });
       } catch (f) {

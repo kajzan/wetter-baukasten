@@ -299,6 +299,11 @@ function hoereVorschau() {
     if (!d.ok) { zeigeFehler(d.fehler || "Unbekannter Fehler."); return; }
     (d.treffer || []).forEach(function (liste, ri) {
       var ziel = document.querySelector('[data-treffer="' + ri + '"]'); if (!ziel) return;
+      var stand = d.stand ? d.stand[ri] : null;
+      if (stand && stand.length) {
+        ziel.innerHTML = standHtml(stand, "Kein Treffer im gewählten Vorschau-Zeitraum.", d.knapp ? d.knapp[ri] : null);
+        return;
+      }
       if (!liste.length) {
         ziel.innerHTML = '<div class="kein-treffer">Kein Treffer im gewählten Vorschau-Zeitraum.</div>'
           + knappHtml(d.knapp ? d.knapp[ri] : null);

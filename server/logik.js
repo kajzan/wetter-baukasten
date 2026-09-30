@@ -233,7 +233,7 @@ function zeitpunktText(zeitMs) {
    Rückgabe (oder null, wenn es gar keine prüfbare Stunde gibt):
      { wann, fehlend:[ {art, ist, grenze, richtung} | {art:"windrichtung", ist, sektoren} ] }
      { wann, dauer, gebraucht }   – alles passt, aber nicht lang genug am Stück */
-export function findeKnapp(regel, vorhersage, jetztLokalMs) {
+export function findeKnapp(regel, vorhersage, jetztLokalMs, nurDatum = null) {
   const bausteine = Array.isArray(regel.bausteine) && regel.bausteine.length
     ? regel.bausteine : bausteineAusBedingungen(regel.bedingungen ?? {});
   if (!bausteine.length) return null;                 // Regel ohne Bedingungen
@@ -250,6 +250,7 @@ export function findeKnapp(regel, vorhersage, jetztLokalMs) {
   for (let i = 0; i < stunden.time.length; i++) {
     const zeitMs = Date.parse(stunden.time[i] + ":00Z");
     if (zeitMs < jetztLokalMs || zeitMs > fensterEndeMs) continue;
+    if (nurDatum && stunden.time[i].slice(0, 10) !== nurDatum) continue;   // nur dieser eine Tag
     const uhr = new Date(zeitMs).getUTCHours();
     if (!(vonUhr <= uhr && uhr < bisUhr)) continue;
     const werte = werteDerStunde(stunden, i);
@@ -280,10 +281,37 @@ export function findeKnapp(regel, vorhersage, jetztLokalMs) {
   // hier nichts zu erklären.
   if (laengsterLauf >= mindest) return null;
   if (laengsterLauf > 0) {
-    return { wann: zeitpunktText(ersteGutStunde), dauer: laengsterLauf, gebraucht: mindest };
+    return { wann: zeitpunktText(ersteGutStunde), uhr: new Date(ersteGutStunde).getUTCHours(),
+             dauer: laengsterLauf, gebraucht: mindest };
   }
   if (!beste) return null;
-  return { wann: zeitpunktText(beste.zeitMs), fehlend: beste.fehlend };
+  return { wann: zeitpunktText(beste.zeitMs), uhr: new Date(beste.zeitMs).getUTCHours(), fehlend: beste.fehlend };
+}
+
+/* Überblick Tag für Tag: an Treffer-Tagen der Treffer, an allen anderen Tagen
+   im Vorschau-Fenster, woran es dort am wenigsten gefehlt hat. So sieht man
+   z. B. für den Pizzaabend, welche Tage gehen – auch wenn nicht jeder Tag passt.
+   Rückgabe (chronologisch): [ { datum, treffer:"…" } | { datum, knapp:{…} } ] */
+export function tagesStand(regel, vorhersage, jetztLokalMs, trefferListe) {
+  const trefferNachTag = {};
+  for (const t of trefferListe) trefferNachTag[t.datum] = t.text;
+  const fensterEndeMs = jetztLokalMs + (regel.zeitfensterStunden ?? 48) * STUNDE_MS;
+  const tage = [];
+  for (const zeit of vorhersage.hourly.time) {
+    const zeitMs = Date.parse(zeit + ":00Z");
+    if (zeitMs < jetztLokalMs || zeitMs > fensterEndeMs) continue;
+    const datum = zeit.slice(0, 10);
+    if (!tage.includes(datum)) tage.push(datum);
+  }
+  for (const datum of Object.keys(trefferNachTag)) if (!tage.includes(datum)) tage.push(datum);
+  tage.sort();
+  const stand = [];
+  for (const datum of tage) {
+    if (datum in trefferNachTag) { stand.push({ datum, treffer: trefferNachTag[datum] }); continue; }
+    const knapp = findeKnapp(regel, vorhersage, jetztLokalMs, datum);
+    if (knapp) stand.push({ datum, knapp });   // ohne prüfbare Stunde (z. B. heute schon vorbei): weglassen
+  }
+  return stand;
 }
 
 /* Sucht pro Tag den ersten ausreichend langen Zeitblock, der zur Regel passt.

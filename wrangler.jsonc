@@ -10,6 +10,9 @@
   },
   // Speicher (KV): merkt sich pro Nutzer Ort + Regeln + Push-Abo.
   // Die ID ist eine Adresse, kein Geheimnis.
+  // Liefert Zeitpunkt und Kennung der gerade laufenden Fassung – die App
+  // zeigt damit in den Einstellungen an, wann sie zuletzt aktualisiert wurde.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "kv_namespaces": [
     { "binding": "SPEICHER", "id": "23cf2273523d452bb0416cd3788ecbcf" }
   ]

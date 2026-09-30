@@ -11,7 +11,7 @@
 
 import { BAUSTEINE_CSS, BAUSTEINE_JS } from "./bausteine_ui.js";
 
-export function appSeite(vapidPublic) {
+export function appSeite(vapidPublic, appStand = "") {
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -108,6 +108,7 @@ export function appSeite(vapidPublic) {
   .knopf.breit { width:100%; }
   .knopf:disabled { opacity:.5; cursor:default; }
   .hinweis { font-size:.82rem; color:var(--text2); }
+  .app-stand { font-size:.78rem; color:var(--text2); text-align:center; margin:4px 0 8px; font-variant-numeric:tabular-nums; }
   /* Überschrift mit kleinem (i) zum Aufklappen der Erklärung */
   .info-feld > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
     font-size:1.02rem; font-weight:700; margin-bottom:10px; }
@@ -320,6 +321,7 @@ ${BAUSTEINE_CSS}
           <li><b>Bausteine</b> – Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte und UV, jeweils als Mindest- und/oder Höchstwert. <b>Alle</b> Bausteine müssen passen.</li>
           <li><b>„oder“ kombinieren</b> – mit „+ oder“ legst du eine Alternative in denselben Baustein, dann genügt <b>eine</b> der Zeilen. So geht z. B. „wenig Wind <i>oder</i> Wind aus Norden“. Bausteine lassen sich auch mit dem Finger ziehen: auf einen Baustein = oder, dazwischen = und. Abschalten in den Einstellungen unter „Erweiterte Regeln“.</li>
           <li><b>Klartext-Kontrolle</b> – unter jeder Regel steht als Satz, was wirklich auslöst; widersprüchliche Regeln werden gemeldet.</li>
+          <li><b>Tag für Tag</b> – unter jeder Regel steht für jeden Tag im Vorschau-Fenster, ob es passt. Passt ein Tag nicht, steht dort, woran es gelegen hat und wie knapp es war.</li>
           <li><b>Zeit festlegen</b> – Vorschau-Fenster von 1 bis 7 Tagen, erlaubte Uhrzeiten und wie lange das Wetter am Stück passen muss.</li>
           <li><b>Benachrichtigung pro Regel</b> – einmal am Tag oder stündlich (z. B. für Sturm-Warnungen).</li>
           <li><b>Wetter ansehen</b> – 7 Tage mit Stundenwerten. Über die Diagramme streichen zeigt die Werte einzelner Stunden; ein Tipp auf das Temperatur-Diagramm vergrößert es.</li>
@@ -331,6 +333,7 @@ ${BAUSTEINE_CSS}
         Nachrichten enthalten nie eine Ortsangabe · gespeichert wird nur der gerundete Ort.</p>
       </details>
     </section>
+    <p class="app-stand" id="app-stand"></p>
   </section>
 </main>
 
@@ -345,6 +348,7 @@ ${BAUSTEINE_CSS}
 <script>
 "use strict";
 var VAPID_PUBLIC = "${vapidPublic}";
+var APP_STAND = "${appStand}";   // Veröffentlichungszeitpunkt dieser Fassung (leer, wenn unbekannt)
 
 var FENSTER_OPTIONEN = [ [24,"1 Tag"], [48,"2 Tage"], [72,"3 Tage"], [120,"5 Tage"], [168,"7 Tage"] ];
 var EMOJI_AUSWAHL = ["🍕","🌱","🧺","🏃","🔥","🧴","⛈️","☀️","🌤️","⛅","☁️","🌧️","❄️","🌈","💨","🌊",
@@ -422,11 +426,21 @@ function zeichneSchriftwahl() {
   });
 }
 
+/* „App-Stand“: wann diese Fassung veröffentlicht wurde – so sieht man
+   sofort, ob schon die neueste Version geladen ist. */
+function zeichneAppStand() {
+  var ziel = $("app-stand"); if (!ziel) return;
+  var d = APP_STAND ? new Date(APP_STAND) : null;
+  if (!d || isNaN(d.getTime())) { ziel.textContent = "App-Stand: unbekannt"; return; }
+  ziel.textContent = "App-Stand: " + d.toLocaleString("de-DE", { day:"2-digit", month:"2-digit",
+    year:"numeric", hour:"2-digit", minute:"2-digit" }) + " Uhr";
+}
+
 function speichere() { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); }
 function runde(w) { return Math.round(parseFloat(w) * 10) / 10; }
 function $(id) { return document.getElementById(id); }
 function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-var letzteTreffer = null, letzteKnapp = null, letzteTage = [], letzteStunden = null,
+var letzteTreffer = null, letzteKnapp = null, letzteStand = null, letzteTage = [], letzteStunden = null,
     offeneTage = {}, offeneEditoren = {};
 var letzteSonne = null, letzteVersatz = 0;
 
@@ -821,6 +835,13 @@ function trefferHtml(i, regel) {
   if (!zustand.ort) return '<div class="kein-treffer">Wähle zuerst deinen Ort.</div>';
   if (!letzteTreffer) return '<div class="kein-treffer">Prüfe …</div>';
   var liste = letzteTreffer[i] || [];
+  // Tag für Tag: passende Tage grün, bei den anderen steht, woran es scheitert
+  // (z. B. für den Pizzaabend, wenn man nicht an jedem Tag Zeit hat).
+  var stand = letzteStand ? letzteStand[i] : null;
+  if (stand && stand.length) {
+    return standHtml(stand, "Kein Treffer im Fenster von " + fensterText(regel.zeitfensterStunden || 48) + ".",
+      letzteKnapp ? letzteKnapp[i] : null);
+  }
   if (!liste.length) {
     // Kein Treffer: zeigen, woran es am wenigsten gefehlt hat – vielleicht war
     // es nur haarscharf daneben und man macht trotzdem Pizza.
@@ -908,7 +929,7 @@ function zeichneAlles() { zeichneRegeln(); zeichneVorlagen(); aktualisiereVorsch
 function vorschauLangsam() { aktualisiereVorschauLangsam(); syncWennAktiv(); }
 function wetterCacheKey() { return zustand.ort ? "wwCache_" + zustand.ort.lat + "," + zustand.ort.lon : null; }
 function anwendeVorschau(d) {
-  letzteTreffer = d.treffer; letzteKnapp = d.knapp || null;
+  letzteTreffer = d.treffer; letzteKnapp = d.knapp || null; letzteStand = d.stand || null;
   letzteTage = d.tage || []; letzteStunden = d.stunden || null;
   if (d.sonne) letzteSonne = d.sonne;
   if (d.versatz != null) letzteVersatz = d.versatz;
@@ -925,7 +946,7 @@ function aktualisiereVorschau() {
     body:JSON.stringify({ lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln }) })
   .then(function (a) { return a.json(); }).then(function (d) {
     if (!d || !d.ok) throw new Error((d && d.fehler) || "unbekannt");
-    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, knapp: d.knapp, tage: d.tage, stunden: d.stunden, sonne: d.sonne, versatz: d.versatz })); } catch (e) {}
+    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, knapp: d.knapp, stand: d.stand, tage: d.tage, stunden: d.stunden, sonne: d.sonne, versatz: d.versatz })); } catch (e) {}
     anwendeVorschau(d);
   }).catch(function (f) {
     // Bei Fehler die zuletzt gespeicherte Vorschau zeigen (macht die App unabhängiger)
@@ -1266,7 +1287,7 @@ $("erweitert-schalter").addEventListener("change", function () {
   erweitert = this.checked; zustand.erweitert = erweitert; speichere();
   zeichneModusSchalter(); zeichneRegeln();
 });
-zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); zeichneSchriftwahl();
+zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); zeichneSchriftwahl(); zeichneAppStand();
 zeichneModusSchalter(); aktualisiereVorschau();
 setzeHintergrund(); setInterval(setzeHintergrund, 5 * 60 * 1000);
 if (!zustand.willkommenGesehen) zeigeWillkommen();
