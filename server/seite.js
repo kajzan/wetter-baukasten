@@ -321,7 +321,7 @@ ${BAUSTEINE_CSS}
           <li><b>Bausteine</b> – Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte und UV, jeweils als Mindest- und/oder Höchstwert. <b>Alle</b> Bausteine müssen passen.</li>
           <li><b>„oder“ kombinieren</b> – mit „+ oder“ legst du eine Alternative in denselben Baustein, dann genügt <b>eine</b> der Zeilen. So geht z. B. „wenig Wind <i>oder</i> Wind aus Norden“. Bausteine lassen sich auch mit dem Finger ziehen: auf einen Baustein = oder, dazwischen = und. Abschalten in den Einstellungen unter „Erweiterte Regeln“.</li>
           <li><b>Klartext-Kontrolle</b> – unter jeder Regel steht als Satz, was wirklich auslöst; widersprüchliche Regeln werden gemeldet.</li>
-          <li><b>Tag für Tag</b> – unter jeder Regel steht für jeden Tag im Vorschau-Fenster, ob es passt. Passt ein Tag nicht, steht dort, woran es gelegen hat und wie knapp es war.</li>
+          <li><b>Tag für Tag</b> – unter jeder Regel eine Zeile pro Tag: grüner Punkt = passt, sonst steht kurz da, woran es scheitert (gelb = nur knapp).</li>
           <li><b>Zeit festlegen</b> – Vorschau-Fenster von 1 bis 7 Tagen, erlaubte Uhrzeiten und wie lange das Wetter am Stück passen muss.</li>
           <li><b>Benachrichtigung pro Regel</b> – einmal am Tag oder stündlich (z. B. für Sturm-Warnungen).</li>
           <li><b>Wetter ansehen</b> – 7 Tage mit Stundenwerten. Über die Diagramme streichen zeigt die Werte einzelner Stunden; ein Tipp auf das Temperatur-Diagramm vergrößert es.</li>
@@ -839,8 +839,7 @@ function trefferHtml(i, regel) {
   // (z. B. für den Pizzaabend, wenn man nicht an jedem Tag Zeit hat).
   var stand = letzteStand ? letzteStand[i] : null;
   if (stand && stand.length) {
-    return standHtml(stand, "Kein Treffer im Fenster von " + fensterText(regel.zeitfensterStunden || 48) + ".",
-      letzteKnapp ? letzteKnapp[i] : null);
+    return standHtml(stand);
   }
   if (!liste.length) {
     // Kein Treffer: zeigen, woran es am wenigsten gefehlt hat – vielleicht war

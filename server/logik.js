@@ -291,10 +291,11 @@ export function findeKnapp(regel, vorhersage, jetztLokalMs, nurDatum = null) {
 /* Überblick Tag für Tag: an Treffer-Tagen der Treffer, an allen anderen Tagen
    im Vorschau-Fenster, woran es dort am wenigsten gefehlt hat. So sieht man
    z. B. für den Pizzaabend, welche Tage gehen – auch wenn nicht jeder Tag passt.
-   Rückgabe (chronologisch): [ { datum, treffer:"…" } | { datum, knapp:{…} } ] */
+   Rückgabe (chronologisch):
+     [ { datum, treffer:"…", von, bis, temp } | { datum, knapp:{…} } ] */
 export function tagesStand(regel, vorhersage, jetztLokalMs, trefferListe) {
   const trefferNachTag = {};
-  for (const t of trefferListe) trefferNachTag[t.datum] = t.text;
+  for (const t of trefferListe) trefferNachTag[t.datum] = t;
   const fensterEndeMs = jetztLokalMs + (regel.zeitfensterStunden ?? 48) * STUNDE_MS;
   const tage = [];
   for (const zeit of vorhersage.hourly.time) {
@@ -307,7 +308,8 @@ export function tagesStand(regel, vorhersage, jetztLokalMs, trefferListe) {
   tage.sort();
   const stand = [];
   for (const datum of tage) {
-    if (datum in trefferNachTag) { stand.push({ datum, treffer: trefferNachTag[datum] }); continue; }
+    const t = trefferNachTag[datum];
+    if (t) { stand.push({ datum, treffer: t.text, von: t.von, bis: t.bis, temp: t.temp }); continue; }
     const knapp = findeKnapp(regel, vorhersage, jetztLokalMs, datum);
     if (knapp) stand.push({ datum, knapp });   // ohne prüfbare Stunde (z. B. heute schon vorbei): weglassen
   }
@@ -383,6 +385,13 @@ export async function holeVorhersage(lat, lon, tage = 7, fetchFn = fetch) {
 }
 
 /* Baut aus einem Treffer-Block den Push-/Anzeige-Text – bewusst OHNE Ortsangabe. */
+/* Kurzform eines Treffer-Blocks für die Tagesübersicht: { von, bis, temp } */
+export function blockKurz(block) {
+  return { von: new Date(block[0].zeitMs).getUTCHours(),
+           bis: new Date(block[block.length - 1].zeitMs).getUTCHours() + 1,
+           temp: Math.round(block.reduce((s, b) => s + b.werte[0], 0) / block.length) };
+}
+
 export function blockZuText(datumIso, block) {
   const von = new Date(block[0].zeitMs).getUTCHours();
   const bis = new Date(block[block.length - 1].zeitMs).getUTCHours() + 1;

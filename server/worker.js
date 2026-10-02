@@ -26,7 +26,7 @@
  */
 
 import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
-         normalisiereRegeln, rundeKoordinate, findeKnapp, tagesStand } from "./logik.js";
+         normalisiereRegeln, rundeKoordinate, findeKnapp, tagesStand, blockKurz } from "./logik.js";
 import { sendeWebPush } from "./webpush.js";
 import { appSeite } from "./seite.js";
 import { baukastenSeite } from "./baukasten.js";
@@ -191,7 +191,7 @@ export default {
           if (!regel.aktiv) return [];
           const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
           const liste = Object.keys(gefunden).sort().map((datum) => ({
-            datum, text: blockZuText(datum, gefunden[datum]),
+            datum, text: blockZuText(datum, gefunden[datum]), ...blockKurz(gefunden[datum]),
           }));
           // Kein Treffer? Dann erklären, woran es am wenigsten gefehlt hat.
           if (!liste.length) knapp[i] = findeKnapp(regel, vorhersage, jetztLokalMs);

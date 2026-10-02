@@ -133,20 +133,20 @@ export const BAUSTEINE_CSS = `
   .knapp li { margin:1px 0; }
   .knapp .luecke { font-weight:700; white-space:nowrap; }
   .knapp .fast { color:var(--gruen); }
-  /* Tage ohne Treffer in der Tagesübersicht: zurückhaltend, damit die
-     passenden (grünen) Tage ins Auge fallen */
-  .stand-kopf { color:var(--text2); font-size:.81rem; margin-top:7px; font-weight:600; }
-  .tag-nein { border:1px solid var(--linie); color:var(--text2); border-radius:8px;
-    padding:6px 9px; margin-top:5px; font-size:.81rem; line-height:1.45; }
-  .tag-nein .wann { font-weight:700; display:block; margin-bottom:2px; color:var(--text); }
-  .tag-nein ul { margin:0; padding-left:17px; }
-  .tag-nein li { margin:1px 0; }
-  .tag-nein .luecke { font-weight:700; white-space:nowrap; color:var(--gelb); }
-  .tag-nein .fast { color:var(--gruen); }
-  .tag-nein.knapp { border-color:transparent; color:var(--gelb); }
-  .tag-nein.knapp .wann { color:var(--gelb); }
-  .am-knappsten { font-size:.72rem; font-weight:700; background:var(--karte); border-radius:99px;
-    padding:1px 7px; margin-left:4px; white-space:nowrap; }
+  /* Tagesübersicht: eine Zeile pro Tag */
+  .tage-zahl { font-size:.78rem; color:var(--text2); margin:6px 0; letter-spacing:.02em; }
+  .tage-zahl b { color:var(--text); }
+  .tage { display:flex; flex-direction:column; border-top:1px solid var(--linie); }
+  .tz { display:grid; grid-template-columns:44px 10px 1fr; align-items:center; gap:10px;
+    padding:6px 2px; border-bottom:1px solid var(--linie); font-size:.88rem; }
+  .tz-name { font-weight:700; line-height:1.15; font-variant-numeric:tabular-nums; }
+  .tz-name small { display:block; font-weight:400; color:var(--text2); font-size:.72rem; }
+  .tz-punkt { width:10px; height:10px; border-radius:50%; border:2px solid var(--text2); opacity:.45; box-sizing:border-box; }
+  .tz-text { color:var(--text2); font-variant-numeric:tabular-nums; }
+  .tz.ja .tz-punkt { background:var(--gruen); border-color:var(--gruen); opacity:1; }
+  .tz.ja .tz-text { color:var(--text); font-weight:600; }
+  .tz.fast .tz-punkt { border-color:var(--gelb); opacity:1; }
+  .tz.fast .tz-text { color:var(--gelb); }
   .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:7px 10px;
     font-size:.83rem; margin-top:6px; }`;
 
@@ -255,36 +255,49 @@ function knappHtml(knapp) {
 }
 
 /* ---------- Tag für Tag: welche Tage gehen, woran scheitern die anderen? ----------
-   stand = [ {datum, treffer:"…"} | {datum, knapp:{…}} ] (vom Dienst, chronologisch).
-   kopf = Satz für den Fall, dass kein einziger Tag passt.
-   knappGesamt = der knappste Beinahe-Treffer im ganzen Fenster (wird hervorgehoben). */
-var TAGNAMEN = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
-function tagName(datum) {
-  var d = new Date(datum + "T00:00:00Z");
-  return TAGNAMEN[d.getUTCDay()] + ", " + datum.slice(8, 10) + "." + datum.slice(5, 7) + ".";
+   Eine ruhige Zeile pro Tag: Tag, Punkt, kurzer Text.
+   stand = [ {datum, treffer, von, bis, temp} | {datum, knapp:{…}} ] (vom Dienst, chronologisch). */
+var KURZTAGE = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+function zahlKurz(w) { return String(Math.round(w * 10) / 10).replace(".", ","); }
+function kurzGrund(g) {
+  if (g.art === "windrichtung") return "Wind aus " + (g.ist || "?");
+  var min = g.richtung === "min", ab = zahlKurz(Math.abs(g.ist - g.grenze)), ist = zahlKurz(g.ist);
+  switch (g.art) {
+    case "temp":       return ab + " °C zu " + (min ? "kalt" : "warm");
+    case "wind":       return min ? "zu wenig Wind" : ab + " km/h zu windig";
+    case "boe":        return min ? "zu wenig Böen" : "Böen " + ist + " km/h";
+    case "regen":      return min ? "zu trocken" : "Regen " + ist + " mm";
+    case "bewoelkung": return (min ? "zu klar" : "zu bewölkt") + " (" + ist + " %)";
+    case "feuchte":    return (min ? "zu trocken" : "zu feucht") + " (" + ist + " %)";
+    case "uv":         return "UV " + ist + " zu " + (min ? "niedrig" : "hoch");
+  }
+  return g.art;
 }
-function standHtml(stand, kopf, knappGesamt) {
+function grundKurz(k) {
+  if (k.dauer) return "nur " + k.dauer + " Std. am Stück";
+  var l = (k.fehlend || []).map(kurzGrund);
+  return l.slice(0, 2).join(", ") + (l.length > 2 ? " +" + (l.length - 2) : "");
+}
+/* „Knapp daneben“: nur ein Grund, und der ist haarscharf (wie in grundZeile) */
+function istKnapp(k) {
+  if (!k || k.dauer || !k.fehlend || k.fehlend.length !== 1) return false;
+  var g = k.fehlend[0], a = ARTEN[g.art];
+  if (!a || g.art === "windrichtung") return false;
+  return Math.abs(g.ist - g.grenze) <= Math.max((a.max - a.min) * 0.02, Math.abs(g.grenze) * 0.1);
+}
+function standHtml(stand) {
   var gut = stand.filter(function (t) { return t.treffer; }).length;
-  var html = gut
-    ? '<div class="stand-kopf">' + (gut === stand.length
-        ? (gut === 1 ? "Passt am einzigen Tag im Fenster." : "Passt an allen " + gut + " Tagen.")
-        : "Passt an " + gut + " von " + stand.length + " Tagen.") + "</div>"
-    : '<div class="kein-treffer">' + kopf + "</div>";
-  return html + stand.map(function (t) {
-    if (t.treffer) return '<div class="treffer">✔️ ' + sicher(t.treffer) + "</div>";
-    var k = t.knapp;
-    var besonders = !gut && knappGesamt && knappGesamt.wann === k.wann;
-    var kopfzeile = '<span class="wann">' + tagName(t.datum) + " – passt nicht"
-      + (besonders ? ' <span class="am-knappsten">am knappsten</span>' : "") + "</span>";
-    if (k.dauer) {
-      return '<div class="tag-nein' + (besonders ? " knapp" : "") + '">' + kopfzeile
-        + "Ab " + k.uhr + " Uhr passt alles – aber nur " + k.dauer + (k.dauer === 1 ? " Stunde" : " Stunden")
-        + " am Stück. Gebraucht werden " + k.gebraucht + ".</div>";
-    }
-    return '<div class="tag-nein' + (besonders ? " knapp" : "") + '">' + kopfzeile
-      + "Am nächsten dran um " + k.uhr + " Uhr:<ul><li>"
-      + (k.fehlend || []).map(grundZeile).join("</li><li>") + "</li></ul></div>";
-  }).join("");
+  return '<div class="tage-zahl"><b>' + gut + "</b> von " + stand.length + (stand.length === 1 ? " Tag" : " Tagen") + "</div>"
+    + '<div class="tage">' + stand.map(function (t) {
+      var d = new Date(t.datum + "T00:00:00Z");
+      var art = t.treffer ? "ja" : (istKnapp(t.knapp) ? "fast" : "nein");
+      var text = t.treffer
+        ? (t.von != null ? t.von + "–" + t.bis + " Uhr · " + t.temp + " °C" : "passt")
+        : grundKurz(t.knapp);
+      return '<div class="tz ' + art + '"><span class="tz-name">' + KURZTAGE[d.getUTCDay()]
+        + "<small>" + t.datum.slice(8, 10) + "." + t.datum.slice(5, 7) + ".</small></span>"
+        + '<span class="tz-punkt"></span><span class="tz-text">' + sicher(text) + "</span></div>";
+    }).join("") + "</div>";
 }
 
 function regelSatz(regel) {

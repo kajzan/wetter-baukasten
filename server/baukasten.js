@@ -301,7 +301,7 @@ function hoereVorschau() {
       var ziel = document.querySelector('[data-treffer="' + ri + '"]'); if (!ziel) return;
       var stand = d.stand ? d.stand[ri] : null;
       if (stand && stand.length) {
-        ziel.innerHTML = standHtml(stand, "Kein Treffer im gewählten Vorschau-Zeitraum.", d.knapp ? d.knapp[ri] : null);
+        ziel.innerHTML = standHtml(stand);
         return;
       }
       if (!liste.length) {
