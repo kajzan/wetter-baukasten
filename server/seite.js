@@ -158,11 +158,16 @@ export function appSeite(vapidPublic, appStand = "") {
   .leaflet-container { font:inherit; background:var(--hg); }
 
   /* Vorlagen */
-  .vorlagen { display:flex; flex-wrap:wrap; gap:8px; }
-  .vorlagen button { border:1px solid var(--linie); background:var(--hg); color:var(--text);
-    border-radius:999px; padding:8px 13px; font-size:.9rem; cursor:pointer; }
+  /* Raster: so viele gleich breite Spalten, wie mit mind. 8rem passen (meist zwei;
+     bei sehr großer Schrift eine) – jede Kachel gleich hoch */
+  .vorlagen { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(8rem, 100%), 1fr)); grid-auto-rows:1fr; gap:8px; }
+  .vorlagen button { display:flex; align-items:center; gap:8px; min-height:44px; text-align:left;
+    border:1px solid var(--linie); background:var(--hg); color:var(--text);
+    border-radius:12px; padding:8px 10px; font:inherit; font-size:.88rem; line-height:1.2; cursor:pointer; }
+  .vorlagen .v-emoji { width:1.4em; flex-shrink:0; text-align:center; }
+  .vorlagen .v-name { min-width:0; overflow-wrap:break-word; -webkit-hyphens:manual; hyphens:manual; }
   .vorlagen button:disabled { opacity:.4; cursor:default; }
-  .vorlagen button.eigene { border-style:dashed; color:var(--akzent); }
+  .vorlagen button.eigene { grid-column:1 / -1; justify-content:center; border-style:dashed; color:var(--akzent); font-weight:600; }
 
   /* Regeln */
   .regel-huelle { position:relative; margin-top:10px; }
@@ -239,8 +244,10 @@ ${BAUSTEINE_CSS}
     <div id="nudge"></div>
     <div id="modus-hinweis"></div>
     <section class="karte">
-      <h2>Deine Wetter-Wünsche</h2>
-      <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Unter „Feinjustieren“ baust du sie aus Bausteinen.</p>
+      <details class="info-feld">
+        <summary><span class="titel-text">Deine Wetter-Wünsche</span><span class="i-kreis" aria-hidden="true">i</span></summary>
+        <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Unter „Feinjustieren“ baust du sie aus Bausteinen.</p>
+      </details>
       <div class="vorlagen" id="vorlagen"></div>
       <div id="regel-liste"></div>
     </section>
@@ -715,11 +722,13 @@ function initOrtskarte() {
 }
 
 /* ---------- Vorlagen + eigene Regel ---------- */
+/* Lange Namen nur an sinnvoller Stelle umbrechen: „Wäsche-tag“ statt „Wäscheta-g“ */
+function trennbar(name) { return name.replace(/\\B(tag|creme|wetter|warnung)\\b/gi, "&shy;$1"); }
 function zeichneVorlagen() {
   var ziel = $("vorlagen"); ziel.innerHTML = "";
   VORLAGEN.forEach(function (v) {
     var knopf = document.createElement("button");
-    knopf.textContent = v.emoji + " " + v.name;
+    knopf.innerHTML = '<span class="v-emoji">' + sicher(v.emoji) + '</span><span class="v-name">' + trennbar(sicher(v.name)) + '</span>';
     knopf.disabled = zustand.regeln.some(function (r) { return r.name === v.name; });
     knopf.addEventListener("click", function () {
       zustand.regeln.push({ name:v.name, emoji:v.emoji, aktiv:true, zeitfensterStunden:48,
@@ -731,7 +740,7 @@ function zeichneVorlagen() {
     ziel.appendChild(knopf);
   });
   var eigene = document.createElement("button");
-  eigene.className = "eigene"; eigene.textContent = "＋ Eigene Regel";
+  eigene.className = "eigene"; eigene.textContent = "+ Eigene Regel";
   eigene.addEventListener("click", zeigeEigeneRegelDialog);
   ziel.appendChild(eigene);
 }
@@ -844,7 +853,7 @@ function trefferHtml(i, regel) {
   if (!liste.length) {
     // Kein Treffer: zeigen, woran es am wenigsten gefehlt hat – vielleicht war
     // es nur haarscharf daneben und man macht trotzdem Pizza.
-    return '<div class="kein-treffer">Kein Treffer im Fenster von ' + fensterText(regel.zeitfensterStunden || 48) + '.</div>'
+    return '<div class="kein-treffer">Kein Treffer im Vorschau-Fenster (' + fensterText(regel.zeitfensterStunden || 48) + ').</div>'
       + knappHtml(letzteKnapp ? letzteKnapp[i] : null);
   }
   return liste.map(function (t) { return '<div class="treffer">✔️ ' + sicher(t.text) + '</div>'; }).join("");
