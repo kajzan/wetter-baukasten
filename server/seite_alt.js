@@ -1,0 +1,1306 @@
+/*
+ * Die App-Seite des Wetter-Wächters (eine Datei; externe Dienste – Ortssuche,
+ * Reverse-Geocoding, Karte – spricht der Browser des Nutzers direkt an).
+ * BISHERIGE Oberfläche – bleibt eine Weile unter "/alt" erreichbar, falls mit
+ * der neuen etwas nicht klappt. Wird vom Worker unter "/alt" ausgeliefert; der öffentliche VAPID-Schlüssel wird
+ * beim Ausliefern eingesetzt.
+ *
+ * Reiter: Wünsche · Wetter · Einstellungen (untere Navigationsleiste).
+ * Hinweis: Das Seiten-JavaScript nutzt bewusst KEINE Backticks/Template-Literale,
+ * weil die ganze Seite in einem Template-Literal steckt.
+ */
+
+import { BAUSTEINE_CSS, BAUSTEINE_JS } from "./bausteine_ui.js";
+
+export function alteAppSeite(vapidPublic, appStand = "") {
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wetter-Wächter">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<title>Wetter-Wächter</title>
+<style>
+  :root, :root[data-theme="light"] {
+    --hg:#f4f6f8; --karte:#ffffff; --text:#1c2733; --text2:#5b6b7b;
+    --linie:#dde4ea; --akzent:#2563eb; --akzent-hell:#e8effd;
+    --gruen:#15803d; --gruen-hell:#e6f4ea; --rot:#b91c1c; --rot-hell:#fdeaea;
+    --glas:rgba(255,255,255,.45); --glas-linie:rgba(255,255,255,.6);
+    --glas-tief:rgba(255,255,255,.62); --glas-nav:rgba(255,255,255,.72);
+    --gelb-hell:#fdf4e3; --gelb:#8a6414;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
+            --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
+            --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
+            --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
+            --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7);
+            --gelb-hell:#2b2416; --gelb:#e3b95f; }
+  }
+  :root[data-theme="dark"] {
+    --hg:#10161d; --karte:#1a232e; --text:#e8edf2; --text2:#93a3b3;
+    --linie:#2c3947; --akzent:#5b93f5; --akzent-hell:#1d2c44;
+    --gruen:#4ade80; --gruen-hell:#12291a; --rot:#f87171; --rot-hell:#331616;
+    --glas:rgba(255,255,255,.09); --glas-linie:rgba(255,255,255,.16);
+    --glas-tief:rgba(8,13,22,.34); --glas-nav:rgba(14,22,38,.7);
+    --gelb-hell:#2b2416; --gelb:#e3b95f;
+  }
+
+  /* ---- Himmel-Hintergrund (Verlauf + gezeichnetes Wetter) ---- */
+  #himmel { position:fixed; inset:0; z-index:-1; overflow:hidden;
+    background:var(--hg); transition:background .8s ease; }
+  #himmel-deko { position:absolute; inset:0; }
+  #himmel-deko svg { position:absolute; inset:0; width:100%; height:100%; }
+  @keyframes fallen { to { transform:translateY(12px); } }
+  @keyframes rieseln { to { transform:translateY(12px); } }
+  @keyframes funkeln { 50% { opacity:.15; } }
+  @keyframes ziehen { to { transform:translateX(8px); } }
+  .niederschlag { animation:fallen .62s linear infinite; }
+  .schneefall { animation:rieseln 5.5s linear infinite; }
+  .sterne circle { animation:funkeln 4s ease-in-out infinite; }
+  .wolkenzug { animation:ziehen 34s ease-in-out infinite alternate; }
+  @media (prefers-reduced-motion: reduce) {
+    .niederschlag, .schneefall, .sterne circle, .wolkenzug { animation:none; }
+  }
+
+  /* ---- Glas-Oberflächen über dem Himmel ---- */
+  body.himmel-modus .karte { background:var(--glas); border-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(8px) saturate(1.25); backdrop-filter:blur(8px) saturate(1.25); }
+  body.himmel-modus #reiter-wetter > .karte { background:transparent; border:none; padding:0;
+    -webkit-backdrop-filter:none; backdrop-filter:none; }
+  body.himmel-modus #reiter-wetter .tag { background:var(--glas); border-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(8px) saturate(1.25); backdrop-filter:blur(8px) saturate(1.25); }
+  body.himmel-modus input[type=text], body.himmel-modus input[type=number], body.himmel-modus select,
+  body.himmel-modus .vorlagen button, body.himmel-modus #ort-ergebnisse button,
+  body.himmel-modus .sektoren button:not(.an), body.himmel-modus .regel,
+  body.himmel-modus .emoji-gitter button:not(.an) {
+    background:var(--glas-tief); border-color:var(--glas-linie); }
+  body.himmel-modus nav { background:var(--glas-nav); border-top-color:var(--glas-linie);
+    -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); }
+  body.himmel-modus h2, body.himmel-modus .hinweis, body.himmel-modus .untertitel { text-shadow:0 1px 2px rgba(0,0,0,.08); }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:transparent; color:var(--text); line-height:1.5; -webkit-text-size-adjust:100%; }
+  main { max-width:640px; margin:0 auto; padding:14px 12px calc(78px + env(safe-area-inset-bottom)); }
+  h1 { font-size:1.3rem; margin:6px 2px 2px; }
+  h2 { font-size:1.02rem; margin:0 0 10px; }
+  .untertitel { color:var(--text2); font-size:.85rem; margin:0 2px 14px; }
+  .karte { background:var(--karte); border:1px solid var(--linie); border-radius:14px; padding:14px; margin-bottom:14px; }
+  input[type=text] { width:100%; padding:11px 12px; border:1px solid var(--linie);
+    border-radius:10px; background:var(--hg); color:var(--text); font-size:max(16px,1rem); }
+  input[type=number] { width:100%; padding:7px 8px; border:1px solid var(--linie);
+    border-radius:8px; background:var(--hg); color:var(--text); font-size:max(16px,1rem); text-align:right; }
+  select { width:100%; padding:9px 10px; border:1px solid var(--linie); border-radius:8px;
+    background:var(--hg); color:var(--text); font-size:max(16px,1rem); }
+  label { font-size:.82rem; color:var(--text2); display:block; margin-bottom:2px; }
+  .knopf { display:inline-block; border:0; border-radius:10px; cursor:pointer;
+    padding:12px 16px; font-size:.95rem; font-weight:600; background:var(--akzent); color:#fff; }
+  .knopf.zart { background:var(--akzent-hell); color:var(--akzent); }
+  .knopf.gruen { background:var(--gruen); color:#fff; }
+  .knopf.rot { background:var(--rot-hell); color:var(--rot); }
+  .knopf.breit { width:100%; }
+  .knopf:disabled { opacity:.5; cursor:default; }
+  .hinweis { font-size:.82rem; color:var(--text2); }
+  .app-stand { font-size:.78rem; color:var(--text2); text-align:center; margin:4px 0 8px; font-variant-numeric:tabular-nums; }
+  /* Überschrift mit kleinem (i) zum Aufklappen der Erklärung */
+  .info-feld > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
+    font-size:1.02rem; font-weight:700; margin-bottom:10px; }
+  .info-feld > summary::-webkit-details-marker { display:none; }
+  .info-feld .i-kreis { width:20px; height:20px; border-radius:50%; border:1.5px solid var(--akzent);
+    color:var(--akzent); font-size:.76rem; font-weight:700; font-style:italic; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; line-height:1; }
+  .info-feld[open] .i-kreis { background:var(--akzent); color:#fff; }
+  .info-feld > p { margin:0 0 12px; }
+  .modus-aus { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:var(--akzent-hell); border:1px solid var(--akzent); border-radius:12px;
+    padding:10px 12px; margin-bottom:14px; font-size:.84rem; }
+  .modus-aus > div { flex:1; min-width:170px; }
+  /* Schriftgrößen-Wahl (Einstellungen) */
+  .groessen { display:flex; gap:6px; }
+  .groessen button { flex:1; border:1px solid var(--linie); background:var(--hg); color:var(--text);
+    border-radius:9px; padding:9px 4px; cursor:pointer; line-height:1.2; }
+  .groessen button.an { background:var(--akzent); color:#fff; border-color:var(--akzent); }
+  .groessen button .a { display:block; font-weight:700; }
+  .groessen button .b { display:block; font-size:.7rem; opacity:.8; }
+  .warnung { background:var(--rot-hell); color:var(--rot); border-radius:8px; padding:8px 10px; font-size:.86rem; margin-top:8px; }
+  .erfolg { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:8px 10px; font-size:.86rem; margin-top:8px; font-weight:600; }
+
+  nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--karte);
+        border-top:1px solid var(--linie); z-index:20; padding-bottom:env(safe-area-inset-bottom); }
+  nav button { flex:1; border:0; background:none; cursor:pointer; padding:8px 2px 10px;
+    font-size:.72rem; color:var(--text2); display:flex; flex-direction:column; align-items:center; gap:2px; }
+  nav button .sym { font-size:1.3rem; }
+  nav button.aktiv { color:var(--akzent); font-weight:600; }
+  .reiter { display:none; } .reiter.sichtbar { display:block; }
+
+  /* Ort */
+  .ort-kopf { display:flex; align-items:center; gap:7px; }
+  .ort-kopf .pin { font-size:1.15rem; line-height:1.4; flex-shrink:0; }
+  /* Name und Koordinaten bleiben in einer Zeile; lange Ortsnamen werden
+     mit … gekürzt, statt die Koordinaten umzubrechen. */
+  .ort-kopf .info { flex:1; min-width:0; display:flex; flex-wrap:nowrap; align-items:baseline; gap:0 6px; }
+  .ort-kopf .nam { font-weight:700; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ort-kopf .koord { font-size:.74rem; color:var(--text2); white-space:nowrap; flex-shrink:0; }
+  #ort-ergebnisse button { display:block; width:100%; text-align:left; background:var(--hg);
+    border:1px solid var(--linie); border-radius:8px; padding:9px 10px; margin-top:6px; color:var(--text); font-size:.92rem; cursor:pointer; }
+  .ort-zeile { display:flex; gap:8px; } .ort-zeile input { flex:1; }
+  .ort-zeile .knopf { padding:11px 13px; flex-shrink:0; }
+  .karten-schalter { margin-top:10px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+  #ortskarte { height:260px; border-radius:10px; margin-top:10px; display:none; overflow:hidden; z-index:0; }
+  #ortskarte.offen { display:block; }
+  .leaflet-container { font:inherit; background:var(--hg); }
+
+  /* Vorlagen */
+  /* Raster: so viele gleich breite Spalten, wie mit mind. 8rem passen (meist zwei;
+     bei sehr großer Schrift eine) – jede Kachel gleich hoch */
+  .vorlagen { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(8rem, 100%), 1fr)); grid-auto-rows:1fr; gap:8px; }
+  .vorlagen button { display:flex; align-items:center; gap:8px; min-height:44px; text-align:left;
+    border:1px solid var(--linie); background:var(--hg); color:var(--text);
+    border-radius:12px; padding:8px 10px; font:inherit; font-size:.88rem; line-height:1.2; cursor:pointer; }
+  .vorlagen .v-emoji { width:1.4em; flex-shrink:0; text-align:center; }
+  .vorlagen .v-name { min-width:0; overflow-wrap:break-word; -webkit-hyphens:manual; hyphens:manual; }
+  .vorlagen button:disabled { opacity:.4; cursor:default; }
+  .vorlagen button.eigene { grid-column:1 / -1; justify-content:center; border-style:dashed; color:var(--akzent); font-weight:600; }
+
+  /* Regeln */
+  .regel-huelle { position:relative; margin-top:10px; }
+  .regel-huelle .loeschbg { position:absolute; inset:0; background:var(--rot-hell); color:var(--rot);
+    border-radius:12px; display:flex; align-items:center; justify-content:flex-end; padding-right:18px;
+    font-weight:700; font-size:.9rem; opacity:0; transition:opacity .12s; }
+  .regel-huelle.wischt .loeschbg { opacity:1; }
+  .regel { position:relative; border:1px solid var(--linie); border-radius:12px; padding:11px 12px;
+    background:var(--karte); touch-action:pan-y; }
+  .regel.inaktiv { opacity:.55; }
+  .regelkopf { display:flex; align-items:center; gap:10px; }
+  .regelkopf .emoji { font-size:1.35rem; }
+  .regelkopf .name { flex:1; font-weight:700; }
+  .treffer { background:var(--gruen-hell); color:var(--gruen); border-radius:8px; padding:7px 9px; margin-top:7px; font-size:.87rem; }
+  .kein-treffer { color:var(--text2); font-size:.84rem; margin-top:7px; }
+  details.fein summary { cursor:pointer; font-size:.84rem; color:var(--akzent); padding:6px 0 2px; }
+  .zeile { display:flex; gap:8px; margin-top:8px; } .zeile > div { flex:1; min-width:0; }
+${BAUSTEINE_CSS}
+
+  /* Schalter */
+  .schalter { position:relative; width:46px; height:26px; flex-shrink:0; }
+  .schalter input { opacity:0; width:100%; height:100%; position:absolute; margin:0; cursor:pointer; z-index:2; }
+  .schalter .bahn { position:absolute; inset:0; border-radius:13px; background:var(--linie); transition:background .15s; }
+  .schalter .bahn::after { content:""; position:absolute; top:3px; left:3px; width:20px; height:20px;
+    border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:left .15s; }
+  .schalter input:checked + .bahn { background:var(--gruen); }
+  .schalter input:checked + .bahn::after { left:23px; }
+  .schalter-zeile { display:flex; align-items:center; gap:12px; }
+  .schalter-zeile .txt { flex:1; font-weight:600; }
+
+  /* Wetter-Tage */
+  .tag { border:1px solid var(--linie); border-radius:10px; padding:10px 11px; margin-top:9px; }
+  .tag-kopf { display:flex; align-items:center; gap:8px; cursor:pointer; }
+  .tag-kopf .wt { font-weight:700; min-width:58px; }
+  .tag-kopf .icon { font-size:1.15rem; }
+  .tag-kopf .werte { margin-left:auto; text-align:right; font-size:.74rem; white-space:nowrap; }
+  .tag-kopf .pfeil { color:var(--text2); transition:transform .15s; }
+  .tag.offen .tag-kopf .pfeil { transform:rotate(90deg); }
+  .details { display:none; margin-top:10px; } .tag.offen .details { display:block; }
+  .stundenreihe { display:flex; gap:9px; overflow-x:auto; padding-bottom:4px; }
+  .stunde { flex:0 0 auto; text-align:center; font-size:.74rem; color:var(--text2); min-width:50px; }
+  .stunde .h { font-weight:700; color:var(--text); font-size:.8rem; }
+  .stunde .i { font-size:1.05rem; margin:1px 0; }
+  .stunde .t { color:var(--text); font-weight:600; font-size:.82rem; }
+  .diagramm { margin-top:12px; }
+  .diagramm .titel { font-size:.8rem; color:var(--text2); margin-bottom:2px; display:flex; justify-content:space-between; }
+  .diagramm svg { width:100%; height:auto; display:block; }
+  .dia-box { position:relative; touch-action:none; }
+  .dia-box .xline { position:absolute; top:0; bottom:0; width:1px; background:var(--text); opacity:.4; display:none; pointer-events:none; }
+  .dia-box .xtip { position:absolute; top:0; transform:translateX(-50%); background:var(--karte); border:1px solid var(--linie);
+    border-radius:8px; padding:3px 7px; font-size:.72rem; white-space:nowrap; display:none; pointer-events:none; box-shadow:0 1px 5px rgba(0,0,0,.18); z-index:2; }
+  .tag.gross { border-color:var(--akzent); border-width:2px; }
+  .tag.gross .tag-kopf .wt { font-size:1.05rem; }
+
+  /* Modal */
+  .modal-hg { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:30; display:flex;
+    align-items:center; justify-content:center; padding:18px; }
+  .modal { background:var(--karte); border-radius:16px; padding:20px; max-width:420px; width:100%; max-height:90vh; overflow-y:auto; }
+  .modal h2 { font-size:1.15rem; }
+  .emoji-gitter { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; margin-top:8px; }
+  .emoji-gitter button { border:1px solid var(--linie); background:var(--hg); border-radius:8px;
+    font-size:1.25rem; padding:6px 0; cursor:pointer; }
+  .emoji-gitter button.an { border-color:var(--akzent); background:var(--akzent-hell); }
+  .banner { background:var(--akzent-hell); border:1px solid var(--akzent); border-radius:12px;
+    padding:11px 12px; margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .banner .txt { flex:1; min-width:150px; font-size:.88rem; }
+</style>
+</head>
+<body>
+<div id="himmel"><div id="himmel-deko"></div></div>
+<main>
+  <!-- ===== Wünsche ===== -->
+  <section id="reiter-wuensche" class="reiter sichtbar">
+    <div id="nudge"></div>
+    <div id="modus-hinweis"></div>
+    <section class="karte">
+      <details class="info-feld">
+        <summary><span class="titel-text">Deine Wetter-Wünsche</span><span class="i-kreis" aria-hidden="true">i</span></summary>
+        <p class="hinweis">Tippe eine Vorlage an – oder baue eine eigene. Unter „Feinjustieren“ baust du sie aus Bausteinen.</p>
+      </details>
+      <div class="vorlagen" id="vorlagen"></div>
+      <div id="regel-liste"></div>
+    </section>
+
+    <section class="karte">
+      <h2 id="ort-titel">Dein Ort</h2>
+      <div id="ort-anzeige" style="display:none">
+        <div class="ort-kopf">
+          <span class="pin">📍</span>
+          <div class="info"><span class="nam" id="ort-name"></span><span class="koord" id="ort-koord"></span></div>
+          <button class="knopf zart" id="ort-aendern" style="padding:7px 11px;font-size:.82rem">Ändern</button>
+        </div>
+      </div>
+      <div id="ort-suche">
+        <div class="ort-zeile">
+          <input type="text" id="ort-eingabe" placeholder="Ort suchen, z. B. Düsseldorf …" autocomplete="off">
+          <button class="knopf zart" id="ort-standort" title="Meinen Standort verwenden">📍</button>
+        </div>
+        <div id="ort-ergebnisse"></div>
+        <p class="hinweis" style="margin-bottom:0">🔒 Es wird nur eine <b>gerundete</b> Position (~11 km) verwendet – nie dein genauer Standort.</p>
+      </div>
+      <div class="karten-schalter">
+        <button class="knopf zart" id="karte-toggle" style="padding:8px 12px;font-size:.85rem">🗺️ Auf Karte wählen</button>
+        <span class="hinweis">🔒 gerundet (~11 km)</span>
+      </div>
+      <div id="ortskarte"></div>
+      <p class="hinweis" id="karte-note" style="display:none;margin-bottom:0">Tippe auf die Karte, um deinen Ort zu setzen.</p>
+    </section>
+  </section>
+
+  <!-- ===== Wetter ===== -->
+  <section id="reiter-wetter" class="reiter">
+    <section class="karte">
+      <h2>Vorhersage (7 Tage)</h2>
+      <p class="hinweis" id="wetter-hinweis">Wähle zuerst im Reiter „Wünsche“ deinen Ort.</p>
+      <div id="wetter-tage"></div>
+    </section>
+  </section>
+
+  <!-- ===== Einstellungen ===== -->
+  <section id="reiter-einstellungen" class="reiter">
+    <section class="karte">
+      <details class="info-feld">
+        <summary><span class="titel-text">Benachrichtigungen</span><span class="i-kreis" aria-hidden="true">i</span></summary>
+        <p class="hinweis">An = dein Handy fragt nach Erlaubnis; danach meldet sich der Wächter,
+        sobald ein Wunsch zutrifft. <b>iPhone/iPad:</b> Seite zuerst über das Teilen-Symbol „Zum Home-Bildschirm“ hinzufügen und von dort öffnen.</p>
+      </details>
+      <div class="schalter-zeile">
+        <span class="txt">Push-Benachrichtigungen</span>
+        <label class="schalter"><input type="checkbox" id="push-schalter"><span class="bahn"></span></label>
+      </div>
+      <div id="push-status"></div>
+    </section>
+    <section class="karte">
+      <h2>Regeln</h2>
+      <div class="schalter-zeile">
+        <span class="txt">Erweiterte Regeln (und/oder)</span>
+        <label class="schalter"><input type="checkbox" id="erweitert-schalter"><span class="bahn"></span></label>
+      </div>
+      <p class="hinweis" id="erweitert-erklaerung" style="margin-top:8px"></p>
+    </section>
+    <section class="karte">
+      <h2>Darstellung</h2>
+      <label>Schriftgröße</label>
+      <div class="groessen" id="schrift-wahl"></div>
+      <p class="hinweis" style="margin:8px 0 0">Gilt für die ganze App. Wird auf diesem Gerät gespeichert.</p>
+    </section>
+    <section class="karte">
+      <h2>Daten</h2>
+      <p class="hinweis">Alles im Browser Gespeicherte löschen und dieses Gerät vom Wächter abmelden.</p>
+      <button class="knopf rot" id="loeschen" style="padding:9px 13px;font-size:.85rem">Alles löschen</button>
+    </section>
+    <section class="karte">
+      <details><summary style="cursor:pointer;font-weight:700;font-size:1.02rem">Was diese App kann</summary>
+        <ul style="font-size:.88rem;padding-left:20px;margin:10px 0 0">
+          <li><b>Ort wählen</b> – per Suche, über 📍 dein Standort oder direkt auf der Karte. Gespeichert wird immer nur eine gerundete Position (~11 km).</li>
+          <li><b>Wünsche anlegen</b> – Vorlage antippen (Pizzatag, Wäschetag, Sturm-Warnung …) oder eine eigene Regel mit eigenem Emoji bauen. Zum Löschen die Regel weit nach links wischen.</li>
+          <li><b>Bausteine</b> – Temperatur, Wind, Windböen, Windrichtung, Regen, Bewölkung, Luftfeuchte und UV, jeweils als Mindest- und/oder Höchstwert. <b>Alle</b> Bausteine müssen passen.</li>
+          <li><b>„oder“ kombinieren</b> – mit „+ oder“ legst du eine Alternative in denselben Baustein, dann genügt <b>eine</b> der Zeilen. So geht z. B. „wenig Wind <i>oder</i> Wind aus Norden“. Bausteine lassen sich auch mit dem Finger ziehen: auf einen Baustein = oder, dazwischen = und. Abschalten in den Einstellungen unter „Erweiterte Regeln“.</li>
+          <li><b>Klartext-Kontrolle</b> – unter jeder Regel steht als Satz, was wirklich auslöst; widersprüchliche Regeln werden gemeldet.</li>
+          <li><b>Tag für Tag</b> – unter jeder Regel eine Zeile pro Tag: grüner Punkt = passt, sonst steht kurz da, woran es scheitert (gelb = nur knapp).</li>
+          <li><b>Zeit festlegen</b> – Vorschau-Fenster von 1 bis 7 Tagen, erlaubte Uhrzeiten und wie lange das Wetter am Stück passen muss.</li>
+          <li><b>Benachrichtigung pro Regel</b> – einmal am Tag oder stündlich (z. B. für Sturm-Warnungen).</li>
+          <li><b>Wetter ansehen</b> – 7 Tage mit Stundenwerten. Über die Diagramme streichen zeigt die Werte einzelner Stunden; ein Tipp auf das Temperatur-Diagramm vergrößert es.</li>
+          <li><b>Hintergrund</b> – der Himmel zeigt die aktuelle Wetterlage und wechselt zum Sonnenauf- und -untergang deines Ortes zwischen hell und dunkel.</li>
+          <li><b>Zum Home-Bildschirm</b> – als App installierbar; nur dann sind auf iPhone/iPad Push-Nachrichten möglich.</li>
+          <li><b>Alles löschbar</b> – „Alles löschen“ entfernt die Daten im Browser und meldet dieses Gerät ab.</li>
+        </ul>
+        <p class="hinweis" style="margin:8px 0 0">Kostenlos · Wetterdaten: Open-Meteo · Karte: OpenStreetMap · Ortsname: BigDataCloud ·
+        Nachrichten enthalten nie eine Ortsangabe · gespeichert wird nur der gerundete Ort.</p>
+      </details>
+    </section>
+    <p class="app-stand" id="app-stand"></p>
+  </section>
+</main>
+
+<nav>
+  <button data-reiter="wuensche" class="aktiv"><span class="sym">🎯</span>Wünsche</button>
+  <button data-reiter="wetter"><span class="sym">🌤️</span>Wetter</button>
+  <button data-reiter="einstellungen"><span class="sym">⚙️</span>Einstellungen</button>
+</nav>
+
+<div id="modal-ziel"></div>
+
+<script>
+"use strict";
+var VAPID_PUBLIC = "${vapidPublic}";
+var APP_STAND = "${appStand}";   // Veröffentlichungszeitpunkt dieser Fassung (leer, wenn unbekannt)
+
+var FENSTER_OPTIONEN = [ [24,"1 Tag"], [48,"2 Tage"], [72,"3 Tage"], [120,"5 Tage"], [168,"7 Tage"] ];
+var EMOJI_AUSWAHL = ["🍕","🌱","🧺","🏃","🔥","🧴","⛈️","☀️","🌤️","⛅","☁️","🌧️","❄️","🌈","💨","🌊",
+  "🏖️","⛱️","🚴","🥾","🎣","⛳","🎿","🏂","🏕️","🌻","🍄","🐝","🦋","📸","🚗","✈️","🍺","☕","🧗","🏊",
+  "🛶","🪁","🌙","⭐","🌡️","💧","🌪️","🌫️","🍇","🐟","🎪","🎈"];
+function VB(art, min, max) {
+  var t = { art: art };
+  if (min !== null && min !== undefined) t.min = min;
+  if (max !== null && max !== undefined) t.max = max;
+  return { teile: [t] };
+}
+var VORLAGEN = [
+  { name:"Pizza am Balkon", emoji:"🍕", nurVonUhr:11, nurBisUhr:22, mindestdauerStunden:2,
+    bausteine:[ VB("temp",18,28), VB("regen",null,0),
+                { teile:[{ art:"wind", max:10 }, { art:"windrichtung", sektoren:["N","NO","NW"] }] } ] },
+  { name:"Pizzatag", emoji:"🍕", nurVonUhr:11, nurBisUhr:21, mindestdauerStunden:3,
+    bausteine:[ VB("temp",18,28), VB("wind",null,10), VB("regen",null,0) ] },
+  { name:"Pflanztag", emoji:"🌱", nurVonUhr:8, nurBisUhr:20, mindestdauerStunden:4,
+    bausteine:[ VB("temp",15,24), VB("bewoelkung",30,70), VB("regen",null,0.2) ] },
+  { name:"Wäschetag", emoji:"🧺", nurVonUhr:9, nurBisUhr:19, mindestdauerStunden:4,
+    bausteine:[ VB("temp",15,null), VB("wind",5,30), VB("regen",null,0), VB("feuchte",null,65) ] },
+  { name:"Lauf-Wetter", emoji:"🏃", nurVonUhr:6, nurBisUhr:21, mindestdauerStunden:1,
+    bausteine:[ VB("temp",5,20), VB("wind",null,20), VB("regen",null,0.2) ] },
+  { name:"Fahrrad-Wetter", emoji:"🚲", nurVonUhr:6, nurBisUhr:20, mindestdauerStunden:1,
+    bausteine:[ VB("temp",8,28), VB("wind",null,20), VB("boe",null,35), VB("regen",null,0.1) ] },
+  { name:"Sonnencreme", emoji:"🧴", nurVonUhr:9, nurBisUhr:18, mindestdauerStunden:2,
+    bausteine:[ VB("uv",6,null) ] },
+  { name:"Sturm-Warnung", emoji:"⛈️", nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:1, haeufigkeit:"stuendlich",
+    bausteine:[ { teile:[{ art:"wind", min:60 }, { art:"boe", min:90 }] } ] }
+];
+
+var SPEICHER = "wetterWaechterApp_v2";
+var zustand = { ort:null, regeln:[], aktiviert:false, willkommenGesehen:false, nudgeWeg:false,
+                schrift:16, erweitert:true };
+try { var roh = localStorage.getItem(SPEICHER); if (roh) { var g = JSON.parse(roh); if (g && typeof g === "object") zustand = Object.assign(zustand, g); } } catch (e) {}
+if (!Array.isArray(zustand.regeln)) zustand.regeln = [];
+
+/* Der Baustein-Editor arbeitet auf regel.bausteine. Regeln aus der alten
+   Fassung werden beim ersten Öffnen einmalig umgewandelt – verlustfrei, jede
+   bisherige Bedingung wird ein Baustein ohne Alternative. Die alten
+   bedingungen bleiben als Rückfallebene stehen. */
+var erweitert = zustand.erweitert !== false;
+var regeln = zustand.regeln;
+function migriereRegeln() {
+  var geaendert = false;
+  zustand.regeln.forEach(function (r) {
+    if (Array.isArray(r.bausteine) && r.bausteine.length) return;
+    r.bausteine = bausteineAusAltForm(r.bedingungen);
+    geaendert = true;
+  });
+  if (geaendert) speichere();
+}
+
+/* Schriftgröße: skaliert die ganze App über die Grundschrift. Eingabefelder
+   bleiben mindestens 16 px, sonst zoomt iPhone/iPad beim Antippen hinein. */
+var SCHRIFTGROESSEN = [[15, "Klein"], [16, "Normal"], [18, "Groß"], [21, "Sehr groß"]];
+function wendeSchriftAn() {
+  var px = Number(zustand.schrift);
+  if (!SCHRIFTGROESSEN.some(function (g) { return g[0] === px; })) px = 16;
+  document.documentElement.style.fontSize = px + "px";
+}
+wendeSchriftAn();
+function zeichneSchriftwahl() {
+  var ziel = $("schrift-wahl"); if (!ziel) return;
+  ziel.innerHTML = "";
+  SCHRIFTGROESSEN.forEach(function (g) {
+    var knopf = document.createElement("button"); knopf.type = "button";
+    if (Number(zustand.schrift) === g[0]) knopf.className = "an";
+    knopf.innerHTML = '<span class="a" style="font-size:' + g[0] + 'px">Aa</span>'
+      + '<span class="b">' + g[1] + '</span>';
+    knopf.addEventListener("click", function () {
+      zustand.schrift = g[0]; speichere(); wendeSchriftAn(); zeichneSchriftwahl();
+    });
+    ziel.appendChild(knopf);
+  });
+}
+
+/* „App-Stand“: wann diese Fassung veröffentlicht wurde – so sieht man
+   sofort, ob schon die neueste Version geladen ist. */
+function zeichneAppStand() {
+  var ziel = $("app-stand"); if (!ziel) return;
+  var d = APP_STAND ? new Date(APP_STAND) : null;
+  if (!d || isNaN(d.getTime())) { ziel.textContent = "App-Stand: unbekannt"; return; }
+  ziel.textContent = "App-Stand: " + d.toLocaleString("de-DE", { day:"2-digit", month:"2-digit",
+    year:"numeric", hour:"2-digit", minute:"2-digit" }) + " Uhr";
+}
+
+function speichere() { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); }
+function runde(w) { return Math.round(parseFloat(w) * 10) / 10; }
+function $(id) { return document.getElementById(id); }
+function sicher(t) { return String(t == null ? "" : t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+var letzteTreffer = null, letzteKnapp = null, letzteStand = null, letzteTage = [], letzteStunden = null,
+    offeneTage = {}, offeneEditoren = {};
+var letzteSonne = null, letzteVersatz = 0;
+
+/* Reiter */
+Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (knopf) {
+  knopf.addEventListener("click", function () {
+    Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (k) { k.classList.remove("aktiv"); });
+    knopf.classList.add("aktiv");
+    Array.prototype.forEach.call(document.querySelectorAll(".reiter"), function (r) { r.classList.remove("sichtbar"); });
+    $("reiter-" + knopf.dataset.reiter).classList.add("sichtbar");
+    setzeHintergrund();
+    window.scrollTo(0, 0);
+  });
+});
+function zeigeReiter(name) { var k = document.querySelector('nav button[data-reiter="' + name + '"]'); if (k) k.click(); }
+
+/* ---------- Himmel-Hintergrund + Tag/Nacht nach Sonnenauf-/-untergang ---------- */
+function zeitZuMinuten(iso) { return parseInt(iso.slice(11, 13), 10) * 60 + parseInt(iso.slice(14, 16), 10); }
+function aktuelleStunde(lokal) {
+  if (!letzteStunden) return null;
+  var p = lokal.toISOString().slice(0, 13);
+  for (var i = 0; i < letzteStunden.time.length; i++) if (letzteStunden.time[i].slice(0, 13) === p) return i;
+  return null;
+}
+/* Wetterlage aus dem WMO-Code – bestimmt Farbverlauf und gezeichnetes Wetter. */
+function wetterArt(code) {
+  if (code === null || code === undefined) return "klar";
+  if (code >= 95) return "gewitter";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "schnee";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "regen";
+  if (code === 45 || code === 48) return "nebel";
+  if (code === 3) return "wolkig";
+  if (code >= 1) return "leicht";
+  return "klar";
+}
+var HIMMEL_FARBEN = {
+  tag: { klar:["#5fa8e6","#9cccf2","#d9edfb"], leicht:["#63a9e2","#a3cded","#dceaf6"],
+         wolkig:["#8ea9c2","#b7c8d8","#dae3ec"], nebel:["#9aa8b4","#c3ccd4","#e2e6ea"],
+         regen:["#6b7f95","#95a8ba","#bcc9d5"], gewitter:["#4a5568","#6b7a8f","#98a5b4"],
+         schnee:["#93a7bd","#c4cfdb","#e8edf2"] },
+  daemmerung: { klar:["#ff9e6d","#ef8fa3","#6f6fa6"], leicht:["#fb9d75","#e78fa4","#6d6ea6"],
+         wolkig:["#d99177","#b98c9c","#66688c"], nebel:["#c6a094","#b0a0a8","#6c7089"],
+         regen:["#a8846f","#95818f","#5c6180"], gewitter:["#8a6c62","#7a6c7c","#4e5470"],
+         schnee:["#c49a8c","#ada0ac","#6a6d8c"] },
+  nacht: { klar:["#0b1a38","#152744","#1e3357"], leicht:["#0b1a38","#152744","#1e3357"],
+         wolkig:["#0d1626","#182338","#26344c"], nebel:["#111a26","#1c2734","#2b3644"],
+         regen:["#0a1220","#141d2e","#212c40"], gewitter:["#080e19","#111827","#1c2637"],
+         schnee:["#0c1524","#182234","#28334a"] }
+};
+/* Wolkenfarbe je Lage: tagsüber weiß bis grau, nachts dunkle Silhouetten. */
+var WOLKEN_FARBEN = {
+  tag: { klar:["#ffffff",".85"], leicht:["#ffffff",".88"], wolkig:["#e4ebf2",".95"], nebel:["#dde4ea",".85"],
+         regen:["#9fb0c0",".95"], gewitter:["#6b7a8c",".95"], schnee:["#d3dde6",".95"] },
+  daemmerung: { klar:["#ffe0cc",".85"], leicht:["#ffe0cc",".88"], wolkig:["#e5cbc2",".92"], nebel:["#dbc9c3",".85"],
+         regen:["#9e8b90",".95"], gewitter:["#6f6169",".95"], schnee:["#d6c8cb",".92"] },
+  nacht: { klar:["#26364e",".9"], leicht:["#26364e",".9"], wolkig:["#243254",".95"], nebel:["#2c3a4c",".85"],
+         regen:["#1b2739",".95"], gewitter:["#131b29",".97"], schnee:["#2d3d57",".95"] }
+};
+
+function himmelPhase() {
+  var lokal = new Date(Date.now() + (letzteVersatz || 0) * 1000);
+  var nowMin = lokal.getUTCHours() * 60 + lokal.getUTCMinutes();
+  var srMin = 7 * 60, ssMin = 20 * 60;
+  if (letzteSonne && letzteSonne.sunrise && letzteSonne.sunset) {
+    var heute = lokal.toISOString().slice(0, 10), i = 0;
+    for (var k = 0; k < letzteSonne.sunrise.length; k++) if (letzteSonne.sunrise[k].slice(0, 10) === heute) { i = k; break; }
+    srMin = zeitZuMinuten(letzteSonne.sunrise[i]); ssMin = zeitZuMinuten(letzteSonne.sunset[i]);
+  }
+  var d = 35, phase;
+  if (nowMin < srMin - d || nowMin > ssMin + d) phase = "nacht";
+  else if (Math.abs(nowMin - srMin) <= d || Math.abs(nowMin - ssMin) <= d) phase = "daemmerung";
+  else phase = "tag";
+  var wetter = "klar";
+  if (letzteStunden && letzteStunden.weather_code) {
+    var idx = aktuelleStunde(lokal);
+    if (idx !== null) wetter = wetterArt(letzteStunden.weather_code[idx]);
+  }
+  return { phase: phase, wetter: wetter, nacht: phase === "nacht" };
+}
+function himmelVerlauf(z) {
+  var f = HIMMEL_FARBEN[z.phase][z.wetter];
+  return "linear-gradient(180deg," + f[0] + " 0%," + f[1] + " 55%," + f[2] + " 100%)";
+}
+
+/* ---- Bausteine des gezeichneten Himmels (SVG, Zeichenfläche 100 x 62) ---- */
+function svgWolke(x, y, s) {
+  return '<g transform="translate(' + x + ',' + y + ') scale(' + s + ')">'
+    + '<ellipse cx="0" cy="0" rx="10" ry="6.2"/><ellipse cx="-7.6" cy="2.2" rx="8" ry="5"/>'
+    + '<ellipse cx="8.4" cy="2.6" rx="7.2" ry="4.4"/><rect x="-15" y="1.4" width="30" height="5.4" rx="2.7"/></g>';
+}
+function svgWolken(z, gross) {
+  var f = WOLKEN_FARBEN[z.phase][z.wetter], teile;
+  if (gross === 1) teile = [[30, 46, 0.8]];
+  else if (gross === 2) teile = [[24, 40, 1.05], [71, 70, 0.8], [46, 14, 0.62]];
+  else teile = [[27, 42, 1.2], [73, 74, 0.92], [48, 14, 0.72]];
+  var s = '<g class="wolkenzug" fill="' + f[0] + '" opacity="' + f[1] + '" filter="url(#weich)">';
+  for (var i = 0; i < teile.length; i++) s += svgWolke(teile[i][0], teile[i][1], teile[i][2]);
+  return s + '</g>';
+}
+/* Eine Kachel Niederschlag; alle Kacheln sind gleich, damit die Schleife nahtlos läuft. */
+function svgRegenKachel() {
+  var s = "";
+  for (var i = 0; i < 14; i++) {
+    var x = (i * 27.7) % 100, y = (i * 5.3) % 12;
+    s += '<line x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x - 0.9).toFixed(1) + '" y2="' + (y + 3.2).toFixed(1) + '"/>';
+  }
+  return s;
+}
+function svgSchneeKachel() {
+  var s = "";
+  for (var i = 0; i < 16; i++) {
+    var x = (i * 23.9) % 100, y = (i * 4.7) % 12;
+    s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (0.4 + (i % 3) * 0.14).toFixed(2) + '"/>';
+  }
+  return s;
+}
+/* Niederschlag füllt den ganzen Bildschirm (eigene, hochformatige Zeichenfläche). */
+function svgNiederschlag(art, nacht) {
+  var kachel = art === "schnee" ? svgSchneeKachel() : svgRegenKachel();
+  var inhalt = "";
+  for (var y = -12; y < 232; y += 12) inhalt += '<g transform="translate(0,' + y + ')">' + kachel + '</g>';
+  var gruppe = art === "schnee"
+    ? '<g class="schneefall" fill="' + (nacht ? "#cfdcec" : "#ffffff") + '" opacity="' + (nacht ? ".5" : ".75") + '">' + inhalt + '</g>'
+    : '<g class="niederschlag" stroke="' + (nacht ? "#8fa6c0" : "#eef4fa") + '" stroke-width=".45" stroke-linecap="round"'
+      + ' opacity="' + (nacht ? ".5" : ".6") + '">' + inhalt + '</g>';
+  return '<svg viewBox="0 0 100 220" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' + gruppe + '</svg>';
+}
+function svgSterne() {
+  var s = '<g class="sterne" fill="#ffffff">';
+  for (var i = 0; i < 44; i++) {
+    var x = (i * 29.7 + 3) % 100, y = (i * 13.7) % 96;
+    s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (0.22 + (i % 4) * 0.08).toFixed(2)
+      + '" opacity="' + (0.3 + (i % 5) * 0.12).toFixed(2) + '" style="animation-delay:' + ((i % 7) * 0.55).toFixed(2) + 's"></circle>';
+  }
+  return s + '</g>';
+}
+function svgSonne(cx, cy, r, mitte, kranz) {
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="url(#sonnenschein)"/>'
+    + '<circle cx="' + cx + '" cy="' + cy + '" r="' + kranz + '" fill="' + mitte + '" opacity=".97"/>';
+}
+function svgMond() {
+  return '<circle cx="75" cy="20" r="16" fill="url(#mondschein)"/>'
+    + '<rect width="100" height="130" fill="#eef4ff" mask="url(#mondmaske)"/>';
+}
+/* Baut den kompletten Himmel; der Schlüssel verhindert unnötiges Neuzeichnen. */
+function himmelDeko(z) {
+  var w = z.wetter, offen = (w === "klar" || w === "leicht"), teile = "";
+  var warm = z.phase === "daemmerung";
+  var farben = warm
+    ? '<stop offset="0" stop-color="#fff1d6" stop-opacity=".78"/><stop offset=".35" stop-color="#ffc98a" stop-opacity=".42"/><stop offset="1" stop-color="#ff9e6d" stop-opacity="0"/>'
+    : '<stop offset="0" stop-color="#fffbe8" stop-opacity=".62"/><stop offset=".35" stop-color="#ffeaa0" stop-opacity=".3"/><stop offset="1" stop-color="#ffd979" stop-opacity="0"/>';
+  var defs = '<defs><radialGradient id="sonnenschein">' + farben + '</radialGradient>'
+    + '<radialGradient id="mondschein"><stop offset="0" stop-color="#dce8ff" stop-opacity=".26"/>'
+    + '<stop offset=".45" stop-color="#cfdcf5" stop-opacity=".12"/>'
+    + '<stop offset="1" stop-color="#dce8ff" stop-opacity="0"/></radialGradient>'
+    + '<mask id="mondmaske"><rect width="100" height="130" fill="#000"/>'
+    + '<circle cx="75" cy="20" r="7" fill="#fff"/><circle cx="71.2" cy="17.2" r="6.2" fill="#000"/></mask>'
+    + '<filter id="weich" x="-25%" y="-25%" width="150%" height="150%"><feGaussianBlur stdDeviation=".6"/></filter></defs>';
+
+  if (z.nacht) { if (offen) teile += svgSterne() + svgMond(); }
+  else if (warm) { teile += svgSonne(74, 68, 38, "#ffdba0", 7.5); }
+  else if (offen) { teile += svgSonne(79, 17, 34, "#fffcea", 6.4); }
+  else if (w === "wolkig" || w === "nebel") { teile += '<g opacity=".4">' + svgSonne(79, 17, 30, "#fff8dc", 5.6) + '</g>'; }
+
+  if (w === "leicht") teile += svgWolken(z, 1);
+  else if (w === "wolkig" || w === "nebel") teile += svgWolken(z, 2);
+  else if (w !== "klar") teile += svgWolken(z, 3);
+
+  var himmelskoerper = '<svg viewBox="0 0 100 130" preserveAspectRatio="xMidYMin meet" aria-hidden="true">' + defs + teile + '</svg>';
+  var nass = "";
+  if (w === "regen" || w === "gewitter") nass = svgNiederschlag("regen", z.nacht);
+  else if (w === "schnee") nass = svgNiederschlag("schnee", z.nacht);
+
+  return { schluessel: z.phase + "|" + w, svg: himmelskoerper + nass };
+}
+
+function setzeHintergrund() {
+  var z = himmelPhase();
+  document.documentElement.dataset.theme = z.nacht ? "dark" : "light";
+  document.body.classList.add("himmel-modus");
+  $("himmel").style.background = himmelVerlauf(z);
+  var deko = $("himmel-deko"), neu = himmelDeko(z);
+  if (deko.dataset.stand !== neu.schluessel) { deko.dataset.stand = neu.schluessel; deko.innerHTML = neu.svg; }
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", HIMMEL_FARBEN[z.phase][z.wetter][0]);
+}
+
+/* Wetter-Symbole (WMO) */
+function wetterIcon(code) {
+  if (code === 0) return "☀️"; if (code === 1 || code === 2) return "🌤️"; if (code === 3) return "☁️";
+  if (code === 45 || code === 48) return "🌫️"; if (code >= 51 && code <= 57) return "🌦️";
+  if (code >= 61 && code <= 67) return "🌧️"; if (code >= 71 && code <= 77) return "🌨️";
+  if (code >= 80 && code <= 82) return "🌦️"; if (code >= 85 && code <= 86) return "🌨️";
+  if (code >= 95) return "⛈️"; return "🌡️";
+}
+
+/* ---------- Ort ---------- */
+var suchTimer = null;
+$("ort-eingabe").addEventListener("input", function () {
+  clearTimeout(suchTimer); var text = this.value.trim();
+  if (text.length < 2) { $("ort-ergebnisse").innerHTML = ""; return; }
+  suchTimer = setTimeout(function () { sucheOrt(text); }, 400);
+});
+function sucheOrt(text) {
+  fetch("https://geocoding-api.open-meteo.com/v1/search?count=5&language=de&format=json&name=" + encodeURIComponent(text))
+  .then(function (a) { return a.json(); }).then(function (d) {
+    var ziel = $("ort-ergebnisse"); ziel.innerHTML = "";
+    var funde = (d && d.results) || [];
+    if (!funde.length) { ziel.innerHTML = '<p class="hinweis">Nichts gefunden – anders schreiben?</p>'; return; }
+    funde.forEach(function (f) {
+      var knopf = document.createElement("button");
+      var zusatz = [f.admin1, f.country].filter(Boolean).join(", ");
+      knopf.textContent = f.name + (zusatz ? " – " + zusatz : "");
+      knopf.addEventListener("click", function () { setzeOrt(f.name, f.latitude, f.longitude); });
+      ziel.appendChild(knopf);
+    });
+  }).catch(function () { $("ort-ergebnisse").innerHTML = '<p class="warnung">Ortssuche gerade nicht erreichbar.</p>'; });
+}
+function reverseUndSetze(lat, lon) {
+  fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=de")
+    .then(function (a) { return a.json(); }).then(function (d) {
+      setzeOrt(d.city || d.locality || d.principalSubdivision || "Mein Standort", lat, lon);
+    }).catch(function () { setzeOrt("Mein Standort", lat, lon); });
+}
+$("ort-standort").addEventListener("click", function () {
+  if (!navigator.geolocation) { alert("Dieses Gerät unterstützt keine Standort-Abfrage."); return; }
+  $("ort-standort").textContent = "…";
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    reverseUndSetze(runde(pos.coords.latitude), runde(pos.coords.longitude));
+    $("ort-standort").textContent = "📍";
+  }, function () { $("ort-standort").textContent = "📍"; alert("Standort nicht verfügbar – bitte den Ort oben suchen."); },
+  { enableHighAccuracy:false, timeout:10000 });
+});
+function setzeOrt(name, lat, lon) {
+  zustand.ort = { name:String(name).slice(0,60), lat:runde(lat), lon:runde(lon) };
+  speichere(); zeichneOrt(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
+  if (ortsKarte && window.L) { var p = [zustand.ort.lat, zustand.ort.lon];
+    if (ortsMarker) ortsMarker.setLatLng(p); else ortsMarker = L.marker(p).addTo(ortsKarte);
+    ortsKarte.setView(p, Math.max(ortsKarte.getZoom(), 9)); }
+}
+$("ort-aendern").addEventListener("click", function () {
+  schliesseOrtskarte();
+  $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; $("ort-eingabe").focus();
+});
+function zeichneOrt() {
+  if (zustand.ort) {
+    $("ort-name").textContent = zustand.ort.name;
+    $("ort-koord").textContent = "· " + zustand.ort.lat + " / " + zustand.ort.lon;
+    $("ort-anzeige").style.display = ""; $("ort-suche").style.display = "none"; $("ort-titel").style.display = "none";
+  } else { $("ort-anzeige").style.display = "none"; $("ort-suche").style.display = ""; $("ort-titel").style.display = ""; }
+}
+
+/* Karte (Leaflet, optional – lädt extern) */
+/* ---------- Standortkarte (Ort per Klick wählen, bleibt offen) ---------- */
+var ortsKarte = null, ortsMarker = null;
+function schliesseOrtskarte() { $("ortskarte").classList.remove("offen"); $("karte-note").style.display = "none"; $("karte-toggle").textContent = "🗺️ Auf Karte wählen"; }
+$("karte-toggle").addEventListener("click", function () {
+  var el = $("ortskarte");
+  if (el.classList.contains("offen")) { schliesseOrtskarte(); return; }
+  el.classList.add("offen"); $("karte-note").style.display = ""; this.textContent = "🗺️ Karte schließen"; initOrtskarte();
+});
+function initOrtskarte() {
+  if (ortsKarte) { setTimeout(function () { ortsKarte.invalidateSize(); }, 50); return; }
+  if (!window.L) { $("ortskarte").innerHTML = '<p class="hinweis" style="padding:10px">Karte konnte nicht geladen werden (keine Verbindung?).</p>'; return; }
+  var start = zustand.ort ? [zustand.ort.lat, zustand.ort.lon] : [51, 10];
+  ortsKarte = L.map("ortskarte").setView(start, zustand.ort ? 9 : 4);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(ortsKarte);
+  if (zustand.ort) ortsMarker = L.marker(start).addTo(ortsKarte);
+  // Klick auf die Karte setzt den Ort – die Karte bleibt offen
+  ortsKarte.on("click", function (e) { reverseUndSetze(runde(e.latlng.lat), runde(e.latlng.lng)); });
+  setTimeout(function () { ortsKarte.invalidateSize(); }, 50);
+}
+
+/* ---------- Vorlagen + eigene Regel ---------- */
+/* Lange Namen nur an sinnvoller Stelle umbrechen: „Wäsche-tag“ statt „Wäscheta-g“ */
+function trennbar(name) { return name.replace(/\\B(tag|creme|wetter|warnung)\\b/gi, "&shy;$1"); }
+function zeichneVorlagen() {
+  var ziel = $("vorlagen"); ziel.innerHTML = "";
+  VORLAGEN.forEach(function (v) {
+    var knopf = document.createElement("button");
+    knopf.innerHTML = '<span class="v-emoji">' + sicher(v.emoji) + '</span><span class="v-name">' + trennbar(sicher(v.name)) + '</span>';
+    knopf.disabled = zustand.regeln.some(function (r) { return r.name === v.name; });
+    knopf.addEventListener("click", function () {
+      zustand.regeln.push({ name:v.name, emoji:v.emoji, aktiv:true, zeitfensterStunden:48,
+        nurVonUhr:v.nurVonUhr, nurBisUhr:v.nurBisUhr, mindestdauerStunden:v.mindestdauerStunden,
+        haeufigkeit:v.haeufigkeit || "taeglich",
+        bausteine:JSON.parse(JSON.stringify(v.bausteine)), bedingungen:{} });
+      speichere(); zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
+    });
+    ziel.appendChild(knopf);
+  });
+  var eigene = document.createElement("button");
+  eigene.className = "eigene"; eigene.textContent = "+ Eigene Regel";
+  eigene.addEventListener("click", zeigeEigeneRegelDialog);
+  ziel.appendChild(eigene);
+}
+
+function zeigeEigeneRegelDialog() {
+  var gewaehlt = "⭐";
+  var hg = document.createElement("div"); hg.className = "modal-hg";
+  var gitter = EMOJI_AUSWAHL.map(function (e) { return '<button type="button" data-e="' + e + '">' + e + '</button>'; }).join("");
+  hg.innerHTML = '<div class="modal"><h2>Eigene Regel</h2>'
+    + '<label>Name</label><input type="text" id="er-name" placeholder="z. B. Grillabend" maxlength="40">'
+    + '<label style="margin-top:10px">Symbol (tippe eins an oder gib per Tastatur ein beliebiges ein)</label>'
+    + '<input type="text" id="er-emoji" value="⭐" maxlength="4" style="text-align:center;font-size:1.4rem">'
+    + '<div class="emoji-gitter" id="er-gitter">' + gitter + '</div>'
+    + '<div class="zeile" style="margin-top:14px"><div><button class="knopf zart breit" id="er-abbruch">Abbrechen</button></div>'
+    + '<div><button class="knopf gruen breit" id="er-ok">Erstellen</button></div></div></div>';
+  $("modal-ziel").appendChild(hg);
+  function markiere() { Array.prototype.forEach.call(hg.querySelectorAll("#er-gitter button"), function (b) {
+    b.classList.toggle("an", b.dataset.e === gewaehlt); }); }
+  markiere();
+  Array.prototype.forEach.call(hg.querySelectorAll("#er-gitter button"), function (b) {
+    b.addEventListener("click", function () { gewaehlt = b.dataset.e; $("er-emoji").value = gewaehlt; markiere(); });
+  });
+  $("er-emoji").addEventListener("input", function () { gewaehlt = this.value.trim() || "⭐"; markiere(); });
+  $("er-abbruch").addEventListener("click", function () { $("modal-ziel").innerHTML = ""; });
+  $("er-ok").addEventListener("click", function () {
+    var name = ($("er-name").value || "").trim() || "Eigene Regel";
+    zustand.regeln.push({ name:name, emoji:(gewaehlt || "⭐"), aktiv:true, zeitfensterStunden:48,
+      nurVonUhr:0, nurBisUhr:24, mindestdauerStunden:2, bedingungen:{},
+      bausteine:[{ teile:[{ art:"temp", min:15, max:25 }] }] });
+    $("modal-ziel").innerHTML = "";
+    speichere(); zeichneRegeln(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
+    var karten = document.querySelectorAll("#regel-liste details.fein");
+    if (karten.length) karten[karten.length - 1].open = true;
+  });
+}
+
+/* ---------- Regel-Karten (mit Wisch-zum-Löschen) ---------- */
+function zeichneRegeln() {
+  var ziel = $("regel-liste"); ziel.innerHTML = "";
+  if (!zustand.regeln.length) { ziel.innerHTML = '<p class="hinweis" style="margin-bottom:0">Noch keine Regel – tippe oben eine Vorlage an oder baue eine eigene.</p>'; return; }
+  zustand.regeln.forEach(function (regel, i) {
+    var huelle = document.createElement("div"); huelle.className = "regel-huelle";
+    huelle.innerHTML = '<div class="loeschbg">🗑️ Löschen</div>';
+    var karte = document.createElement("div");
+    karte.className = "regel" + (regel.aktiv ? "" : " inaktiv");
+    karte.dataset.regelkarte = i;     // Ablegeziel-Suche beim Ziehen (data-regel gehört dem Treffer-Feld)
+    var kopf = document.createElement("div"); kopf.className = "regelkopf";
+    kopf.innerHTML = '<span class="emoji">' + sicher(regel.emoji) + '</span>'
+      + '<span class="name">' + sicher(regel.name) + '</span>'
+      + '<label class="schalter"><input type="checkbox" ' + (regel.aktiv ? "checked" : "") + '><span class="bahn"></span></label>';
+    kopf.querySelector("input").addEventListener("change", function () {
+      regel.aktiv = this.checked; speichere(); zeichneRegeln(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
+    });
+    karte.appendChild(kopf);
+    var trefferZiel = document.createElement("div");
+    trefferZiel.dataset.regel = i; trefferZiel.innerHTML = trefferHtml(i, regel);
+    karte.appendChild(trefferZiel);
+    karte.appendChild(feinEditor(regel, i));
+    macheWischbar(karte, function () { entferneRegel(i); });
+    huelle.appendChild(karte); ziel.appendChild(huelle);
+  });
+}
+function entferneRegel(i) {
+  offeneEditoren = {};                 // Indizes verschieben sich
+  zustand.regeln.splice(i, 1); speichere(); zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge();
+}
+function macheWischbar(el, onDelete) {
+  var startX = 0, startY = 0, dx = 0, aktiv = false, schwelle = 130;
+  /* Der rote „Löschen“-Grund wird nur während des Wischens gezeigt – sonst
+     schimmerte er durch die durchsichtigen Glas-Karten hindurch. */
+  var huelle = function () { return el.parentNode; };
+  /* Bedienelemente in der Karte (Regler, Chips, Anfasser, Windrichtung …)
+     dürfen kein Löschen auslösen – sonst kollidiert jede waagerechte Geste
+     mit dem Wischen. */
+  var BEDIENT = "input,select,button,label,.griff,.p-chip,.palette,.sektoren";
+  el.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) return;
+    if (e.target.closest && e.target.closest(BEDIENT)) { aktiv = false; return; }
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; aktiv = true;
+    // Bewusst schwergängig: erst ab der halben Kartenbreite wird gelöscht.
+    schwelle = Math.max(130, el.getBoundingClientRect().width * 0.5);
+    el.style.transition = "";
+  }, { passive: true });
+  el.addEventListener("touchmove", function (e) {
+    if (!aktiv) return;
+    var x = e.touches[0].clientX - startX, y = e.touches[0].clientY - startY;
+    if (Math.abs(y) > Math.abs(x)) { aktiv = false; el.style.transform = ""; huelle().classList.remove("wischt"); return; }
+    dx = Math.min(0, x);
+    if (dx < 0) huelle().classList.add("wischt");
+    el.style.transform = "translateX(" + dx + "px)";
+  }, { passive: true });
+  el.addEventListener("touchend", function () {
+    if (!aktiv) return; aktiv = false; el.style.transition = "transform .15s";
+    if (dx < -schwelle) { el.style.transform = "translateX(-100%)"; setTimeout(onDelete, 130); }
+    else { el.style.transform = "translateX(0)"; huelle().classList.remove("wischt"); }
+    dx = 0;
+  });
+}
+function trefferHtml(i, regel) {
+  if (!regel.aktiv) return '<div class="kein-treffer">Ausgeschaltet – wird nicht geprüft.</div>';
+  if (!zustand.ort) return '<div class="kein-treffer">Wähle zuerst deinen Ort.</div>';
+  if (!letzteTreffer) return '<div class="kein-treffer">Prüfe …</div>';
+  var liste = letzteTreffer[i] || [];
+  // Tag für Tag: passende Tage grün, bei den anderen steht, woran es scheitert
+  // (z. B. für den Pizzaabend, wenn man nicht an jedem Tag Zeit hat).
+  var stand = letzteStand ? letzteStand[i] : null;
+  if (stand && stand.length) {
+    return standHtml(stand);
+  }
+  if (!liste.length) {
+    // Kein Treffer: zeigen, woran es am wenigsten gefehlt hat – vielleicht war
+    // es nur haarscharf daneben und man macht trotzdem Pizza.
+    return '<div class="kein-treffer">Kein Treffer im Vorschau-Fenster (' + fensterText(regel.zeitfensterStunden || 48) + ').</div>'
+      + knappHtml(letzteKnapp ? letzteKnapp[i] : null);
+  }
+  return liste.map(function (t) { return '<div class="treffer">✔️ ' + sicher(t.text) + '</div>'; }).join("");
+}
+function fensterText(h) { for (var k = 0; k < FENSTER_OPTIONEN.length; k++) if (FENSTER_OPTIONEN[k][0] === h) return FENSTER_OPTIONEN[k][1]; return h + " Std."; }
+
+function feinEditor(regel, i) {
+  var det = document.createElement("details");
+  det.className = "fein"; det.innerHTML = "<summary>Feinjustieren</summary>";
+  /* Nach jeder Änderung werden die Regeln neu aufgebaut. Ohne dieses Gedächtnis
+     klappte der Editor dabei jedes Mal zu – mitten im Bauen einer Regel. */
+  det.open = !!offeneEditoren[i];
+  det.addEventListener("toggle", function () { offeneEditoren[i] = det.open; });
+  var np = document.createElement("div"); np.className = "zeile";
+  np.innerHTML = '<div style="flex:2"><label>Name</label><input type="text" value="' + sicher(regel.name) + '" data-f="name"></div>'
+    + '<div><label>Symbol</label><input type="text" maxlength="4" value="' + sicher(regel.emoji) + '" data-f="emoji" style="text-align:center"></div>';
+  np.querySelector('[data-f="name"]').addEventListener("change", function () { regel.name = this.value.trim() || "Regel"; speichere(); zeichneRegeln(); syncWennAktiv(); });
+  np.querySelector('[data-f="emoji"]').addEventListener("change", function () { regel.emoji = this.value.trim() || "🔔"; speichere(); zeichneRegeln(); syncWennAktiv(); });
+  det.appendChild(np);
+
+  var zf = document.createElement("div"); zf.className = "zeile";
+  var optionen = FENSTER_OPTIONEN.map(function (o) { return '<option value="' + o[0] + '"' + ((regel.zeitfensterStunden || 48) === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
+  var haeuf = regel.haeufigkeit || "taeglich";
+  zf.innerHTML = '<div style="flex:1"><label>Vorschau-Fenster</label><select data-f="zeitfensterStunden">' + optionen + '</select></div>'
+    + '<div style="flex:1"><label>Benachrichtigen</label><select data-f="haeufigkeit">'
+    + '<option value="taeglich"' + (haeuf === "taeglich" ? " selected" : "") + '>höchstens 1×/Tag</option>'
+    + '<option value="stuendlich"' + (haeuf === "stuendlich" ? " selected" : "") + '>stündlich, solange es zutrifft</option></select></div>';
+  Array.prototype.forEach.call(zf.querySelectorAll("select"), function (sel) {
+    sel.addEventListener("change", function () {
+      if (this.dataset.f === "zeitfensterStunden") { regel.zeitfensterStunden = parseInt(this.value, 10); aktualisiereVorschau(); }
+      else { regel.haeufigkeit = this.value; }
+      speichere(); syncWennAktiv();
+    });
+  });
+  det.appendChild(zf);
+
+  var zeit = document.createElement("div"); zeit.className = "zeile";
+  zeit.innerHTML =
+      '<div><label>Nur von (Uhr)</label><input type="number" min="0" max="23" value="' + (regel.nurVonUhr != null ? regel.nurVonUhr : 0) + '" data-f="nurVonUhr"></div>'
+    + '<div><label>Nur bis (Uhr)</label><input type="number" min="1" max="24" value="' + (regel.nurBisUhr != null ? regel.nurBisUhr : 24) + '" data-f="nurBisUhr"></div>'
+    + '<div><label>Mind. Dauer</label><input type="number" min="1" max="24" value="' + (regel.mindestdauerStunden != null ? regel.mindestdauerStunden : 2) + '" data-f="mindestdauerStunden"></div>';
+  Array.prototype.forEach.call(zeit.querySelectorAll("input"), function (feld) {
+    feld.addEventListener("change", function () { var z = parseInt(this.value, 10); if (!isNaN(z)) { regel[this.dataset.f] = z; speichere(); aktualisiereVorschau(); syncWennAktiv(); } });
+  });
+  det.appendChild(zeit);
+
+  baueBausteinBereich(det, regel, i);
+  baueSatzUndWarnung(det, regel);
+
+  var entf = document.createElement("div"); entf.style.marginTop = "10px";
+  entf.innerHTML = '<button class="knopf rot" style="padding:7px 11px;font-size:.8rem">🗑️ Regel entfernen</button>';
+  entf.querySelector("button").addEventListener("click", function () { if (confirm('Regel "' + regel.name + '" wirklich entfernen?')) entferneRegel(i); });
+  det.appendChild(entf);
+  return det;
+}
+
+/* ---------- Erweiterte Regeln (und/oder) ---------- */
+function zeichneModusSchalter() {
+  var schalter = $("erweitert-schalter"); if (!schalter) return;
+  schalter.checked = erweitert;
+  $("erweitert-erklaerung").innerHTML = erweitert
+    ? "An: Du kannst Bausteine mit „+ oder“ kombinieren – dann genügt eine der Zeilen. Bausteine lassen sich außerdem ziehen."
+    : "Aus: Alle Bausteine werden mit <b>und</b> verknüpft. Einfacher, aber ohne Alternativen.";
+  // Ist der Modus aus, verschwinden „+ oder“ und die Anfasser. Das muss dort
+  // erklärt werden, wo man es sucht – sonst wirkt die App kaputt.
+  var ziel = $("modus-hinweis");
+  if (erweitert) { ziel.innerHTML = ""; return; }
+  ziel.innerHTML = '<div class="modus-aus"><div><b>Erweiterte Regeln sind aus.</b> '
+    + 'Deshalb gibt es kein „+ oder“ und kein Ziehen – alle Bausteine sind mit <b>und</b> verknüpft.</div>'
+    + '<button class="knopf" type="button" id="modus-an">Einschalten</button></div>';
+  $("modus-an").addEventListener("click", function () {
+    erweitert = true; zustand.erweitert = true; speichere(); zeichneModusSchalter(); zeichneRegeln();
+  });
+}
+
+/* ---------- Vorschau + Wetter ---------- */
+var vorschauTimer = null;
+function aktualisiereVorschauLangsam() { clearTimeout(vorschauTimer); vorschauTimer = setTimeout(aktualisiereVorschau, 700); }
+/* Namen, die der gemeinsame Baustein-Editor erwartet. */
+function zeichneAlles() { zeichneRegeln(); zeichneVorlagen(); aktualisiereVorschau(); syncWennAktiv(); zeichneNudge(); }
+function vorschauLangsam() { aktualisiereVorschauLangsam(); syncWennAktiv(); }
+function wetterCacheKey() { return zustand.ort ? "wwCache_" + zustand.ort.lat + "," + zustand.ort.lon : null; }
+function anwendeVorschau(d) {
+  letzteTreffer = d.treffer; letzteKnapp = d.knapp || null; letzteStand = d.stand || null;
+  letzteTage = d.tage || []; letzteStunden = d.stunden || null;
+  if (d.sonne) letzteSonne = d.sonne;
+  if (d.versatz != null) letzteVersatz = d.versatz;
+  Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
+    var i = parseInt(ziel.dataset.regel, 10); ziel.innerHTML = trefferHtml(i, zustand.regeln[i]);
+  });
+  zeichneWetter();
+  setzeHintergrund();
+}
+function aktualisiereVorschau() {
+  clearTimeout(vorschauTimer);
+  if (!zustand.ort) { $("wetter-hinweis").style.display = ""; $("wetter-tage").innerHTML = ""; return; }
+  fetch("/api/vorschau", { method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln }) })
+  .then(function (a) { return a.json(); }).then(function (d) {
+    if (!d || !d.ok) throw new Error((d && d.fehler) || "unbekannt");
+    try { localStorage.setItem(wetterCacheKey(), JSON.stringify({ zeit: Date.now(), treffer: d.treffer, knapp: d.knapp, stand: d.stand, tage: d.tage, stunden: d.stunden, sonne: d.sonne, versatz: d.versatz })); } catch (e) {}
+    anwendeVorschau(d);
+  }).catch(function (f) {
+    // Bei Fehler die zuletzt gespeicherte Vorschau zeigen (macht die App unabhängiger)
+    var roh = null; try { roh = localStorage.getItem(wetterCacheKey()); } catch (e) {}
+    if (roh) {
+      var c = JSON.parse(roh);
+      anwendeVorschau(c);
+      $("wetter-hinweis").textContent = "Stand: vor " + Math.round((Date.now() - c.zeit) / 60000) + " Min (zwischengespeichert – Wetterdienst gerade nicht erreichbar).";
+      $("wetter-hinweis").style.display = "";
+    } else {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-regel]"), function (ziel) {
+        ziel.innerHTML = '<div class="warnung">Vorschau gerade nicht möglich (' + sicher(f.message) + ').</div>';
+      });
+      $("wetter-hinweis").textContent = "Wetterdaten gerade nicht verfügbar."; $("wetter-hinweis").style.display = "";
+    }
+  });
+}
+var tagCache = {};
+function heuteIsoLokal() { var h = new Date(); return h.getFullYear() + "-" + ("0" + (h.getMonth() + 1)).slice(-2) + "-" + ("0" + h.getDate()).slice(-2); }
+function zeichneWetter() {
+  $("wetter-hinweis").style.display = letzteTage.length ? "none" : "";
+  var ziel = $("wetter-tage"); ziel.innerHTML = "";
+  var heute = heuteIsoLokal(), heuteTag = null, rest = [];
+  letzteTage.forEach(function (t) { if (t.datum === heute && !heuteTag) heuteTag = t; else rest.push(t); });
+  if (heuteTag) ziel.appendChild(baueTag(heuteTag, true));   // heute groß & offen ganz oben
+  rest.forEach(function (t) { ziel.appendChild(baueTag(t, false)); });
+}
+function baueTag(t, gross) {
+  var tag = document.createElement("div");
+  var offen = gross || offeneTage[t.datum];
+  tag.className = "tag" + (gross ? " gross" : "") + (offen ? " offen" : "");
+  var label = gross ? "Heute" : (t.wochentag.slice(0, 2) + ", " + t.datum.slice(8, 10) + "." + t.datum.slice(5, 7) + ".");
+  var kopf = document.createElement("div"); kopf.className = "tag-kopf";
+  kopf.innerHTML = '<span class="wt">' + label + '</span>'
+    + '<span class="icon">' + tagIcon(t.datum) + '</span>'
+    + '<span class="werte">' + t.tempMin + "–" + t.tempMax + "° · 💨" + t.windMax
+    + (t.boeMax != null ? "/" + t.boeMax : "") + (t.windRichtung ? " " + t.windRichtung : "")
+    + (t.uvMax != null ? " · UV" + t.uvMax : "") + '</span>'
+    + (gross ? "" : '<span class="pfeil">▸</span>');
+  var det = document.createElement("div"); det.className = "details";
+  function fuelle() { det.innerHTML = detailHtml(t.datum, gross); det.dataset.gefuellt = "1"; verdrahteInteraktion(det); }
+  if (offen) fuelle();
+  if (!gross) {
+    kopf.addEventListener("click", function () {
+      offeneTage[t.datum] = !offeneTage[t.datum]; tag.classList.toggle("offen");
+      if (offeneTage[t.datum] && !det.dataset.gefuellt) fuelle();
+    });
+  }
+  tag.appendChild(kopf); tag.appendChild(det);
+  return tag;
+}
+/* Fadenkreuz beim Streichen über das Diagramm; die Werte erscheinen in der
+   festen Legendenzeile darüber (läuft nie aus dem Bild). */
+function verdrahteInteraktion(container, keinTap) {
+  Array.prototype.forEach.call(container.querySelectorAll(".dia-box"), function (box) {
+    var svg = box.querySelector(".tw-svg"); if (!svg) return;
+    var xline = box.querySelector(".xline");
+    var legendeEl = box.parentNode.querySelector(".tw-legende");
+    var standard = legendeEl ? legendeEl.innerHTML : "";
+    var W = +svg.dataset.w, l = +svg.dataset.l, r = +svg.dataset.r, n = +svg.dataset.n, datum = box.dataset.datum;
+    // Balken sitzen mittig im Fach, Linienpunkte genau auf dem Raster
+    var balken = svg.dataset.art === "balken", breite = W - l - r;
+    var mitte = function (i) { return balken ? l + (i + 0.5) * (breite / n) : l + i * (breite / (n - 1)); };
+    var nurRegen = box.dataset.feld === "regen";
+    function bei(clientX) {
+      var rect = svg.getBoundingClientRect(); if (!rect.width) return;
+      var svgX = (clientX - rect.left) / rect.width * W;
+      var i = balken ? Math.floor((svgX - l) / (breite / n)) : Math.round((svgX - l) / (breite / (n - 1)));
+      if (i < 0) i = 0; if (i > n - 1) i = n - 1;
+      xline.style.left = (mitte(i) / W * rect.width) + "px"; xline.style.display = "block";
+      var d = tagCache[datum]; if (!d || !legendeEl) return;
+      legendeEl.innerHTML = nurRegen
+        ? '<b>' + d.std[i] + ' Uhr</b> · 🌧️ ' + (Math.round(d.regen[i] * 10) / 10) + ' mm'
+        : '<b>' + d.std[i] + ' Uhr</b> · 🌡️' + Math.round(d.temp[i]) + '° · 💨' + Math.round(d.wind[i])
+          + (d.boen ? ' 🌬️' + Math.round(d.boen[i]) : "") + (d.dir ? ' ' + d.dir[i] : "")
+          + ' · 🌧️' + (Math.round(d.regen[i] * 10) / 10) + (d.uv ? ' · UV' + Math.round(d.uv[i]) : "");
+    }
+    function raus() { xline.style.display = "none"; if (legendeEl) legendeEl.innerHTML = standard; }
+    var startX = 0, startY = 0, bewegt = false;
+    box.addEventListener("pointerdown", function (e) { startX = e.clientX; startY = e.clientY; bewegt = false; });
+    box.addEventListener("pointermove", function (e) { if (Math.abs(e.clientX - startX) > 6 || Math.abs(e.clientY - startY) > 6) bewegt = true; bei(e.clientX); });
+    box.addEventListener("pointerup", function () { if (!keinTap && !nurRegen && !bewegt) { raus(); zeigeDiagrammGross(datum); } });
+    box.addEventListener("pointerleave", raus);
+  });
+}
+/* Diagramm bildschirmfüllend anzeigen (Tippen auf das Tages-Diagramm). */
+function zeigeDiagrammGross(datum) {
+  var d = tagCache[datum]; if (!d) return;
+  var jetztIndex = null;
+  if (datum === heuteIsoLokal() && d.std.length) {
+    var heute = new Date(), jh = heute.getHours() + heute.getMinutes() / 60 - d.std[0];
+    if (jh >= 0 && jh <= d.std.length - 1) jetztIndex = jh;
+  }
+  var titel = datum === heuteIsoLokal() ? "Heute" : (datum.slice(8, 10) + "." + datum.slice(5, 7) + ".");
+  var chart = tempWindDiagramm(d.std, d.temp, d.wind, d.boen, d.uv, jetztIndex, true, datum, true);
+  var hg = document.createElement("div"); hg.className = "modal-hg"; hg.style.padding = "10px";
+  hg.innerHTML = '<div style="width:100%;max-width:760px;background:var(--karte);border:1px solid var(--linie);border-radius:16px;padding:10px 6px 12px">'
+    + '<div style="display:flex;align-items:center;margin:0 6px 4px"><b style="flex:1">' + titel + '</b>'
+    + '<button class="knopf zart" id="dg-zu" style="padding:6px 12px">Schließen</button></div>'
+    + chart + '<p class="hinweis" style="margin:6px 6px 0">Über das Diagramm streichen für die Werte einzelner Stunden.</p></div>';
+  $("modal-ziel").appendChild(hg);
+  verdrahteInteraktion(hg, true);   // im Vergrößern-Fenster kein weiteres Vergrößern
+  $("dg-zu").addEventListener("click", function () { $("modal-ziel").innerHTML = ""; });
+  hg.addEventListener("click", function (e) { if (e.target === hg) $("modal-ziel").innerHTML = ""; });
+}
+function tagIcon(datum) {
+  if (!letzteStunden || !letzteStunden.weather_code) return "🌡️";
+  for (var i = 0; i < letzteStunden.time.length; i++)
+    if (letzteStunden.time[i].slice(0,10) === datum && letzteStunden.time[i].slice(11,13) === "12")
+      return wetterIcon(letzteStunden.weather_code[i]);
+  return "🌡️";
+}
+function tagIndizes(datum) {
+  var idx = []; if (!letzteStunden) return idx;
+  for (var i = 0; i < letzteStunden.time.length; i++) if (letzteStunden.time[i].slice(0,10) === datum) idx.push(i);
+  return idx;
+}
+function detailHtml(datum, gross) {
+  var idx = tagIndizes(datum); if (!idx.length) return "";
+  var s = letzteStunden, stunden = [];
+  idx.forEach(function (i) {
+    var dir = s.wind_direction_10m ? PFEIL_VON[Math.round(s.wind_direction_10m[i] / 45) % 8] : "";
+    var uv = s.uv_index ? Math.round(s.uv_index[i]) : null;
+    var boe = s.wind_gusts_10m ? Math.round(s.wind_gusts_10m[i]) : null;
+    stunden.push('<div class="stunde"><div class="h">' + s.time[i].slice(11,13) + '</div>'
+      + '<div class="i">' + (s.weather_code ? wetterIcon(s.weather_code[i]) : "") + '</div>'
+      + '<div class="t">' + Math.round(s.temperature_2m[i]) + '°</div>'
+      + '<div>' + dir + ' ' + Math.round(s.wind_speed_10m[i]) + '</div>'
+      + (boe != null ? '<div>🌬️ ' + boe + '</div>' : '')
+      + '<div>🌧️ ' + (Math.round(s.precipitation[i] * 10) / 10) + '</div>'
+      + (uv != null ? '<div>UV ' + uv + '</div>' : '') + '</div>');
+  });
+  var std = idx.map(function (i) { return parseInt(s.time[i].slice(11,13), 10); });
+  var temp = idx.map(function (i) { return s.temperature_2m[i]; });
+  var wind = idx.map(function (i) { return s.wind_speed_10m[i]; });
+  var boen = s.wind_gusts_10m ? idx.map(function (i) { return s.wind_gusts_10m[i]; }) : null;
+  var regen = idx.map(function (i) { return s.precipitation[i]; });
+  var dirNamen = s.wind_direction_10m ? idx.map(function (i) { return SEKTOREN[Math.round(s.wind_direction_10m[i] / 45) % 8]; }) : null;
+  var uvArr = s.uv_index ? idx.map(function (i) { return s.uv_index[i]; }) : null;
+  tagCache[datum] = { std: std, temp: temp, wind: wind, boen: boen, regen: regen, dir: dirNamen, uv: uvArr };
+  // Position der aktuellen Uhrzeit (nur wenn der Tag heute ist)
+  var heute = new Date(), jetztIndex = null;
+  if (datum === heuteIsoLokal() && std.length) {
+    var jh = heute.getHours() + heute.getMinutes() / 60 - std[0];
+    if (jh >= 0 && jh <= std.length - 1) jetztIndex = jh;
+  }
+  return '<div class="stundenreihe">' + stunden.join("") + '</div>'
+    + tempWindDiagramm(std, temp, wind, boen, uvArr, jetztIndex, gross, datum)
+    + balkenDiagramm("🌧️ Regen", "mm", std, regen, "#2563eb", jetztIndex, gross, datum);
+}
+/* Dezente senkrechte Linie an der aktuellen Uhrzeit. */
+function jetztLinie(jetztIndex, px, o, H, u) {
+  if (jetztIndex == null) return "";
+  var x = px(jetztIndex).toFixed(1);
+  return '<line class="jetzt-linie" x1="' + x + '" y1="' + o + '" x2="' + x + '" y2="' + (H - u) + '" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2" opacity=".4"/>'
+    + '<text x="' + x + '" y="' + (o + 6) + '" font-size="8" fill="currentColor" text-anchor="middle" opacity=".6">jetzt</text>';
+}
+/* Doppelachsen-Diagramm: Temperatur (rot) + Wind/Böen (türkis) + UV (Fläche).
+   Dezente halbtransparente Flächen unter den Linien; interaktiv über die .dia-box. */
+function tempWindDiagramm(std, temp, wind, boen, uv, jetztIndex, gross, datum, riesig) {
+  var n = temp.length; if (!n) return "";
+  // im Vollbild (riesig) schmale Ränder, damit die Kurven fast die ganze Breite füllen
+  var W = 320, H = riesig ? 200 : (gross ? 150 : 100), l = riesig ? 10 : 26, r = riesig ? 12 : 30, o = 12, u = 20;
+  var tmin = Math.min.apply(null, temp), tmax = Math.max.apply(null, temp); if (tmin === tmax) { tmin -= 1; tmax += 1; }
+  var wmax = Math.max.apply(null, wind.concat(boen || [])); if (wmax <= 0) wmax = 1;
+  // UV hat eine feste Skala 0–10, damit ein UV von 4 an jedem Tag gleich hoch
+  // aussieht; nur bei extremen Werten wird bis 15 erweitert.
+  var uvSpitze = uv ? Math.max.apply(null, uv) : 0;
+  var uvMax = uvSpitze > 10 ? 15 : 10;
+  var px = function (i) { return l + i * (W - l - r) / (n - 1); };
+  var yT = function (v) { return o + (1 - (v - tmin) / (tmax - tmin)) * (H - o - u); };
+  var yW = function (v) { return o + (1 - v / wmax) * (H - o - u); };
+  var yU = function (v) { return o + (1 - v / uvMax) * (H - o - u); };
+  // dezente, gedämpfte Farben
+  var tempFarbe = "#dd6b7a", windFarbe = "#5a9bab", uvFarbe = "#d8a24f";
+  var sw = riesig ? 3.2 : (gross ? 2.8 : 2.2), basis = (H - u).toFixed(1);
+  var linie = function (werte, f, mapy, extra) { return '<polyline fill="none" stroke="' + f + '" stroke-width="' + sw + '" stroke-linejoin="round" stroke-linecap="round" ' + (extra || "") + ' points="'
+    + werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ") + '"/>'; };
+  var flaeche = function (werte, f, mapy, op) { var pts = werte.map(function (v, i) { return px(i).toFixed(1) + "," + mapy(v).toFixed(1); }).join(" ");
+    return '<polygon fill="' + f + '" opacity="' + op + '" stroke="none" points="' + px(0).toFixed(1) + "," + basis + " " + pts + " " + px(n - 1).toFixed(1) + "," + basis + '"/>'; };
+  var achsen = riesig ? "" : (
+      '<text x="2" y="' + (yT(tmax) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmax) + '°</text>'
+    + '<text x="2" y="' + (yT(tmin) + 3).toFixed(1) + '" font-size="9" fill="' + tempFarbe + '">' + Math.round(tmin) + '°</text>'
+    + '<text x="' + (W - 2) + '" y="' + (yW(wmax) + 6).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">' + Math.round(wmax) + '</text>'
+    + '<text x="' + (W - 2) + '" y="' + (yW(0) - 1).toFixed(1) + '" font-size="9" fill="' + windFarbe + '" text-anchor="end">0</text>');
+  var svg = '<svg class="tw-svg" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Temperatur, Wind und UV">'
+    + achsen
+    + jetztLinie(jetztIndex, px, o, H, u)
+    + (uv ? flaeche(uv, uvFarbe, yU, ".13") : "")
+    + flaeche(wind, windFarbe, yW, ".10")
+    + flaeche(temp, tempFarbe, yT, ".10")
+    + (boen ? linie(boen, windFarbe, yW, 'stroke-dasharray="3 3" opacity=".55"') : "")
+    + linie(wind, windFarbe, yW) + linie(temp, tempFarbe, yT)
+    + xBeschriftung(std).map(function (p) { return '<text x="' + px(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("")
+    + '</svg>';
+  var legende = '<b style="color:' + tempFarbe + '">Temperatur °C</b> · <b style="color:' + windFarbe + '">Wind km/h</b>' + (boen ? " · Böen" : "") + (uv ? ' · <b style="color:' + uvFarbe + '">UV</b>' : "");
+  return '<div class="diagramm"><div class="titel"><span class="tw-legende">' + legende + '</span></div>'
+    + '<div class="dia-box" data-datum="' + datum + '">' + svg + '<div class="xline"></div></div></div>';
+}
+function xBeschriftung(std) {
+  var t = [];
+  for (var k = 0; k < std.length; k++) if (std[k] % 6 === 0) t.push([k, std[k]]);
+  return t;
+}
+function linienDiagramm(titel, einheit, std, werte, farbe) {
+  var n = werte.length; if (!n) return "";
+  var min = Math.min.apply(null, werte), max = Math.max.apply(null, werte);
+  if (min === max) { min -= 1; max += 1; }
+  var W = 320, H = 78, l = 6, r = 6, o = 10, u = 20;
+  var px = function (i) { return l + i * (W - l - r) / (n - 1); };
+  var py = function (v) { return o + (1 - (v - min) / (max - min)) * (H - o - u); };
+  var punkte = werte.map(function (v, i) { return px(i).toFixed(1) + "," + py(v).toFixed(1); }).join(" ");
+  var ticks = xBeschriftung(std).map(function (p) { return '<text x="' + px(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("");
+  return '<div class="diagramm"><div class="titel"><span>' + titel + '</span><span>' + Math.round(min) + '–' + Math.round(max) + ' ' + einheit + '</span></div>'
+    + '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + titel + '">'
+    + '<polyline fill="none" stroke="' + farbe + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + punkte + '"/>'
+    + ticks + '</svg></div>';
+}
+/* Balken-Diagramm (Regen) – wie das Temperatur-Diagramm über die .dia-box
+   bestreichbar; die Stundenwerte erscheinen in der Titelzeile. */
+function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex, gross, datum) {
+  var n = werte.length; if (!n) return "";
+  var max = Math.max.apply(null, werte); if (max <= 0) max = 1;
+  var W = 320, H = gross ? 100 : 78, l = 6, r = 6, o = 10, u = 20;
+  var bw = (W - l - r) / n;
+  var pxBar = function (idx) { return l + (idx + 0.5) * bw; };
+  var summe = Math.round(werte.reduce(function (a, b) { return a + b; }, 0) * 10) / 10;
+  var balken = werte.map(function (v, i) {
+    var hh = (v / max) * (H - o - u); return '<rect x="' + (l + i * bw + 0.5).toFixed(1) + '" y="' + (H - u - hh).toFixed(1)
+      + '" width="' + (bw - 1).toFixed(1) + '" height="' + hh.toFixed(1) + '" fill="' + farbe + '" opacity=".85"/>';
+  }).join("");
+  var ticks = xBeschriftung(std).map(function (p) { return '<text x="' + pxBar(p[0]).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" fill="currentColor" text-anchor="middle" opacity=".55">' + p[1] + '</text>'; }).join("");
+  var svg = '<svg class="tw-svg" data-art="balken" data-w="' + W + '" data-l="' + l + '" data-r="' + r + '" data-n="' + n + '"'
+    + ' viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + titel + '">'
+    + balken + jetztLinie(jetztIndex, pxBar, o, H, u) + ticks + '</svg>';
+  return '<div class="diagramm"><div class="titel"><span class="tw-legende">' + titel + '</span><span>' + summe + ' ' + einheit + ' gesamt</span></div>'
+    + '<div class="dia-box" data-datum="' + datum + '" data-feld="regen">' + svg + '<div class="xline"></div></div></div>';
+}
+
+/* ---------- Benachrichtigungen (Schalter) ---------- */
+function b64urlZuBytes(s) {
+  var pad = (4 - (s.length % 4)) % 4; var b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "====".slice(0, pad);
+  var r = atob(b64); return Uint8Array.from(r, function (c) { return c.charCodeAt(0); });
+}
+function zeigePushStatus(text, art) { $("push-status").innerHTML = text ? '<div class="' + (art || "erfolg") + '">' + sicher(text) + "</div>" : ""; }
+function holeAbo() {
+  return navigator.serviceWorker.register("/sw.js").then(function () { return navigator.serviceWorker.ready; })
+    .then(function (reg) { return reg.pushManager.getSubscription().then(function (abo) {
+      return abo || reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64urlZuBytes(VAPID_PUBLIC) }); }); });
+}
+function benachrichtigungAn() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    zeigePushStatus("Dieser Browser unterstützt keine Push-Nachrichten. iPhone: Seite zuerst zum Home-Bildschirm hinzufügen und von dort öffnen.", "warnung");
+    $("push-schalter").checked = false; return;
+  }
+  zeigePushStatus("Richte ein …", "erfolg");
+  Notification.requestPermission().then(function (erlaubnis) {
+    if (erlaubnis !== "granted") throw new Error("Ohne Erlaubnis geht es nicht (Status: " + erlaubnis + ").");
+    return holeAbo();
+  }).then(function (abo) {
+    zustand.aktiviert = true; zustand.nudgeWeg = true; speichere(); zeichneNudge();
+    var bereit = zustand.ort && zustand.regeln.some(function (r) { return r.aktiv; });
+    if (bereit) { return sendeAnDienst(abo, true).then(function (d) {
+      zeigePushStatus(d.gespeichert ? "✅ Aktiv! Eine Bestätigung ist unterwegs. Der Wächter prüft ab jetzt stündlich."
+        : "✅ Test-Nachricht unterwegs! (Speicher wird noch eingerichtet.)", "erfolg"); }); }
+    zeigePushStatus("✅ Eingeschaltet. Sobald du einen Ort und einen aktiven Wunsch hast, wache ich für dich.", "erfolg");
+  }).catch(function (f) { zustand.aktiviert = false; speichere(); $("push-schalter").checked = false; zeigePushStatus("⚠️ " + f.message, "warnung"); });
+}
+function benachrichtigungAus() {
+  zustand.aktiviert = false; speichere();
+  zeigePushStatus("Benachrichtigungen sind aus.", "erfolg");
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (abo) {
+      if (!abo) return; return fetch("/api/deaktivieren", { method:"POST", headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ endpoint:abo.endpoint }) }).then(function () { return abo.unsubscribe(); });
+    }).catch(function () {});
+  }
+}
+$("push-schalter").addEventListener("change", function () { if (this.checked) benachrichtigungAn(); else benachrichtigungAus(); });
+function sendeAnDienst(abo, bestaetigen) {
+  return fetch("/api/aktivieren", { method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ abo:abo.toJSON ? abo.toJSON() : abo, lat:zustand.ort.lat, lon:zustand.ort.lon, regeln:zustand.regeln, bestaetigen: !!bestaetigen }) })
+    .then(function (a) { return a.json().then(function (d) { if (!a.ok || !d.ok) throw new Error((d && d.fehler) || "Dienst nicht erreichbar."); return d; }); });
+}
+var syncTimer = null;
+function syncWennAktiv() {
+  if (!zustand.aktiviert || !zustand.ort || !zustand.regeln.some(function (r) { return r.aktiv; })) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(function () {
+    navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (abo) { if (abo) return sendeAnDienst(abo, false); }).catch(function () {});
+  }, 1200);
+}
+$("loeschen").addEventListener("click", function () {
+  if (!confirm("Wirklich alles löschen? Regeln, Ort und die Abmeldung vom Wächter.")) return;
+  var fertig = function () { localStorage.removeItem(SPEICHER); location.reload(); };
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (abo) {
+      if (!abo) return null;
+      return fetch("/api/deaktivieren", { method:"POST", headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ endpoint:abo.endpoint }) }).then(function () { return abo.unsubscribe(); });
+    }).then(fertig, fertig);
+  } else { fertig(); }
+});
+
+/* ---------- Erstnutzer + Nudge ---------- */
+function zeigeWillkommen() {
+  var hg = document.createElement("div"); hg.className = "modal-hg";
+  hg.innerHTML = '<div class="modal"><h2>👋 Willkommen beim Wetter-Wächter!</h2>'
+    + '<p style="font-size:.92rem">In drei Schritten fertig:</p>'
+    + '<ol style="font-size:.92rem;padding-left:20px"><li><b>Ort</b> wählen</li>'
+    + '<li><b>Wetter-Wunsch</b> antippen (z. B. 🍕 Pizzatag)</li>'
+    + '<li><b>Benachrichtigungen</b> einschalten – dann melde ich mich, wenn dein Wetter kommt.</li></ol>'
+    + '<p class="hinweis">Kostenlos · nur gerundeter Ort · keine Ortsangaben in den Nachrichten.</p>'
+    + '<button class="knopf breit" id="willkommen-ok">Los geht\\'s</button></div>';
+  $("modal-ziel").appendChild(hg);
+  $("willkommen-ok").addEventListener("click", function () { zustand.willkommenGesehen = true; speichere(); $("modal-ziel").innerHTML = ""; $("ort-eingabe").focus(); });
+}
+function zeichneNudge() {
+  var ziel = $("nudge"); ziel.innerHTML = "";
+  var bereit = zustand.ort && zustand.regeln.some(function (r) { return r.aktiv; });
+  if (!bereit || zustand.aktiviert || zustand.nudgeWeg) return;
+  var banner = document.createElement("div"); banner.className = "banner";
+  banner.innerHTML = '<span style="font-size:1.4rem">🔔</span><span class="txt">Sollen wir dich benachrichtigen, sobald dein Wunsch-Wetter kommt?</span>';
+  var ja = document.createElement("button"); ja.className = "knopf gruen"; ja.style.padding = "9px 13px"; ja.textContent = "Aktivieren";
+  ja.addEventListener("click", function () { $("push-schalter").checked = true; benachrichtigungAn(); });
+  var spaeter = document.createElement("button"); spaeter.className = "knopf zart"; spaeter.style.padding = "9px 13px"; spaeter.textContent = "Später";
+  spaeter.addEventListener("click", function () { zustand.nudgeWeg = true; speichere(); zeichneNudge(); });
+  banner.appendChild(ja); banner.appendChild(spaeter); ziel.appendChild(banner);
+}
+
+${BAUSTEINE_JS}
+
+/* ---------- Start ---------- */
+$("push-schalter").checked = !!zustand.aktiviert;
+migriereRegeln();
+$("erweitert-schalter").addEventListener("change", function () {
+  erweitert = this.checked; zustand.erweitert = erweitert; speichere();
+  zeichneModusSchalter(); zeichneRegeln();
+});
+zeichneOrt(); zeichneVorlagen(); zeichneRegeln(); zeichneNudge(); zeichneSchriftwahl(); zeichneAppStand();
+zeichneModusSchalter(); aktualisiereVorschau();
+setzeHintergrund(); setInterval(setzeHintergrund, 5 * 60 * 1000);
+if (!zustand.willkommenGesehen) zeigeWillkommen();
+</script>
+</body>
+</html>`;
+}

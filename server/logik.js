@@ -351,11 +351,23 @@ export function findeTreffer(regel, vorhersage, jetztLokalMs) {
 
   const treffer = {};
   let block = [];
+  const tagVon = (eintrag) => new Date(eintrag.zeitMs).toISOString().slice(0, 10);
   const blockAbschliessen = (fertig) => {
-    if (fertig.length >= mindest) {
-      const datum = new Date(fertig[0].zeitMs).toISOString().slice(0, 10);
-      if (!(datum in treffer)) treffer[datum] = fertig.slice(); // nur der erste Block pro Tag
+    if (fertig.length < mindest) return;
+    // Ein Block kann über Mitternacht weiterlaufen (z. B. „ganzer Tag“ bei
+    // tagelang ruhigem Wetter). Dann zählt er für jeden Tag, an dem er dort
+    // selbst lang genug ist – sonst gäbe es nur am ersten Tag einen Treffer.
+    const stuecke = [];
+    for (const eintrag of fertig) {
+      const letztes = stuecke[stuecke.length - 1];
+      if (letztes && tagVon(letztes[0]) === tagVon(eintrag)) letztes.push(eintrag); else stuecke.push([eintrag]);
     }
+    stuecke.forEach((stueck, k) => {
+      const datum = tagVon(stueck[0]);
+      if (datum in treffer) return;                               // nur der erste Block pro Tag
+      if (k === 0) treffer[datum] = stueck.length >= mindest ? stueck : fertig.slice(); // wie bisher
+      else if (stueck.length >= mindest) treffer[datum] = stueck;
+    });
   };
   for (const eintrag of passende) {
     if (block.length && (eintrag.zeitMs - block[block.length - 1].zeitMs !== STUNDE_MS)) {
@@ -452,6 +464,22 @@ export function tagesZusammenfassung(vorhersage) {
 }
 
 /* Prüft und begrenzt vom Nutzer eingereichte Regeln (Missbrauchs-Schutz). */
+/* Orte je Regel: Jede Regel darf einen eigenen (gerundeten) Ort haben, sonst
+   gilt der Standard-Ort. Höchstens MAX_ORTE verschiedene Orte je Gerät, damit
+   das Gratis-Kontingent der Wetterabfragen reicht. */
+export const MAX_ORTE = 5;
+export function ortVonRegel(regel, standardLat, standardLon) {
+  return regel.lat != null && regel.lon != null
+    ? { lat: regel.lat, lon: regel.lon } : { lat: standardLat, lon: standardLon };
+}
+export function ortsSchluessel(ort) { return ort.lat + "," + ort.lon; }
+/* Alle verschiedenen Orte (Schlüssel -> {lat, lon}); der Standard-Ort zuerst. */
+export function orteDerRegeln(regeln, standardLat, standardLon) {
+  const orte = new Map([[ortsSchluessel({ lat: standardLat, lon: standardLon }), { lat: standardLat, lon: standardLon }]]);
+  for (const r of regeln) { const o = ortVonRegel(r, standardLat, standardLon); orte.set(ortsSchluessel(o), o); }
+  return orte;
+}
+
 export function normalisiereRegeln(regeln) {
   if (!Array.isArray(regeln)) throw new Error("Regeln fehlen.");
   if (regeln.length > 15) throw new Error("Höchstens 15 Regeln erlaubt.");
@@ -489,6 +517,13 @@ export function normalisiereRegeln(regeln) {
       mindestdauerStunden: Math.round(zahl(r?.mindestdauerStunden, 1, 24, 2)),
       bedingungen,
     };
+    // Eigener Ort je Regel (optional). Immer gerundet (~11 km) – auch wenn das
+    // Gerät einen genaueren Wert schicken sollte.
+    const lat = rundeKoordinate(r?.lat), lon = rundeKoordinate(r?.lon);
+    if (r?.lat != null && r?.lon != null && Number.isFinite(lat) && Number.isFinite(lon)
+        && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      geprueft.lat = lat; geprueft.lon = lon;
+    }
     const bausteine = normalisiereBausteine(r?.bausteine);
     if (bausteine) geprueft.bausteine = bausteine;
     else if (Array.isArray(r?.bausteine) && r.bausteine.length) {

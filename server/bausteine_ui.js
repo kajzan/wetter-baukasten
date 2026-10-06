@@ -8,8 +8,8 @@
  *   $(id)                – document.getElementById
  *   sicher(text)         – HTML-Maskierung
  *   erweitert            – Variable: erlaubt „oder“ und Ziehen?
- *   regeln               – das Array der Regeln (gleiche Reihenfolge wie die
- *                          .regel-Elemente im Dokument)
+ *   regeln               – das Array der Regeln (Zuordnung über data-regelkarte,
+ *                          sonst über die Reihenfolge der .regel-Elemente)
  *   speichere()          – Zustand sichern
  *   zeichneAlles()       – Oberfläche neu aufbauen
  *   vorschauLangsam()    – Vorschau verzögert auffrischen (beim Reglerschieben)
@@ -631,7 +631,10 @@ function rolleAmRand(y) {
   // Nur nach oben: unten liegt die Abbruchflaeche, dort darf die Seite nicht
   // unter dem Finger wegrutschen.
   if (y >= 80) return;
-  rollTimer = setInterval(function () { window.scrollBy(0, -12); }, 16);
+  // Liegt die Regel in einem eigenen Rollbereich (Bearbeiten-Fenster), diesen rollen
+  var karte = zieht && document.querySelector('.regel[data-regelkarte="' + zieht.quelle.regelIndex + '"]');
+  var bereich = karte && karte.closest(".rollbereich");
+  rollTimer = setInterval(function () { if (bereich) bereich.scrollTop -= 12; else window.scrollBy(0, -12); }, 16);
 }
 
 /* Welcher Platz liegt unter dem Finger? */
@@ -780,7 +783,9 @@ function legeAb(quelle, ziel) {
 
 /* Satz und Warnung ohne Neuaufbau auffrischen (beim Schieben der Regler). */
 function frischeTexte() {
-  Array.prototype.forEach.call(document.querySelectorAll(".regel"), function (el, ri) {
+  Array.prototype.forEach.call(document.querySelectorAll(".regel"), function (el, nr) {
+    // Die App zeigt nur die gerade bearbeitete Regel – dann zählt data-regelkarte
+    var ri = el.dataset.regelkarte != null ? parseInt(el.dataset.regelkarte, 10) : nr;
     if (!regeln[ri]) return;
     var s = el.querySelector(".satz"); if (s) s.innerHTML = regelSatz(regeln[ri]);
     var probleme = unmoeglichkeiten(regeln[ri]);

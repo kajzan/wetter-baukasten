@@ -26,9 +26,11 @@
  */
 
 import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
-         normalisiereRegeln, rundeKoordinate, findeKnapp, tagesStand, blockKurz } from "./logik.js";
+         normalisiereRegeln, rundeKoordinate, findeKnapp, tagesStand, blockKurz,
+         MAX_ORTE, ortVonRegel, ortsSchluessel, orteDerRegeln } from "./logik.js";
 import { sendeWebPush } from "./webpush.js";
 import { appSeite } from "./seite.js";
+import { alteAppSeite } from "./seite_alt.js";
 import { baukastenSeite } from "./baukasten.js";
 
 // Öffentlicher VAPID-Schlüssel (darf öffentlich sein). Der private liegt
@@ -158,6 +160,9 @@ export default {
       // (vor allem Safari) noch tagelang die alte Fassung.
       if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC, appStand(env)), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+      // Bisherige Oberfläche als Rückfall, solange die neue frisch ist
+      if (pfad === "/alt") return new Response(alteAppSeite(VAPID_PUBLIC, appStand(env)), {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
       // Versuchsfeld für die neue Regelform (nirgends verlinkt, kein Push)
       if (pfad === "/baukasten") return new Response(baukastenSeite(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
@@ -182,13 +187,20 @@ export default {
       }
       let regeln;
       try { regeln = normalisiereRegeln(daten.regeln); } catch (f) { return jsonAntwort({ ok: false, fehler: f.message }, 400); }
+      // Jede Regel kann ihren eigenen (gerundeten) Ort haben: je Ort eine Abfrage.
+      const orte = orteDerRegeln(regeln, lat, lon);
+      if (orte.size > MAX_ORTE) return jsonAntwort({ ok: false, fehler: "Höchstens " + MAX_ORTE + " verschiedene Orte." }, 400);
       try {
-        const vorhersage = await holeVorhersageGecacht(lat, lon, env);
-        const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
+        const vorhersagen = new Map();
+        await Promise.all([...orte].map(async ([schluessel, o]) => {
+          vorhersagen.set(schluessel, await holeVorhersageGecacht(o.lat, o.lon, env));
+        }));
         const knapp = [], stand = [];
         const treffer = regeln.map((regel, i) => {
           knapp[i] = null; stand[i] = [];
           if (!regel.aktiv) return [];
+          const vorhersage = vorhersagen.get(ortsSchluessel(ortVonRegel(regel, lat, lon)));
+          const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
           const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
           const liste = Object.keys(gefunden).sort().map((datum) => ({
             datum, text: blockZuText(datum, gefunden[datum]), ...blockKurz(gefunden[datum]),
@@ -199,6 +211,8 @@ export default {
           stand[i] = tagesStand(regel, vorhersage, jetztLokalMs, liste);
           return liste;
         });
+        // Wetteranzeige und Himmel gehören zum Standard-Ort
+        const vorhersage = vorhersagen.get(ortsSchluessel({ lat, lon }));
         return jsonAntwort({ ok: true, treffer, knapp, stand, tage: tagesZusammenfassung(vorhersage),
           stunden: vorhersage.hourly, sonne: vorhersage.daily || null,
           versatz: vorhersage.utc_offset_seconds ?? 0 });
@@ -218,6 +232,9 @@ export default {
       }
       let regeln;
       try { regeln = normalisiereRegeln(daten.regeln); } catch (f) { return jsonAntwort({ ok: false, fehler: f.message }, 400); }
+      if (orteDerRegeln(regeln, lat, lon).size > MAX_ORTE) {
+        return jsonAntwort({ ok: false, fehler: "Höchstens " + MAX_ORTE + " verschiedene Orte." }, 400);
+      }
 
       let gespeichert = false;
       if (env.SPEICHER) {
@@ -280,67 +297,72 @@ export default {
     const liste = await env.SPEICHER.list({ prefix: "nutzer:", limit: 1000 });
     if (!liste.keys.length) { console.log("Zeitplan: keine Nutzer."); return; }
 
-    // Nutzer laden und nach (grobem) Ort gruppieren -> eine Wetterabfrage pro Ort
+    // Nutzer laden; jede Regel nach ihrem (groben) Ort einsortieren ->
+    // eine Wetterabfrage pro Ort, egal wie viele Nutzer/Regeln dort liegen.
     const nachOrt = new Map();
+    let nutzerZahl = 0;
     for (const eintrag of liste.keys) {
       const roh = await env.SPEICHER.get(eintrag.name);
       if (!roh) continue;
       let nutzer;
       try { nutzer = JSON.parse(roh); } catch { continue; }
       nutzer._schluessel = eintrag.name;
-      const ort = nutzer.lat + "," + nutzer.lon;
-      if (!nachOrt.has(ort)) nachOrt.set(ort, []);
-      nachOrt.get(ort).push(nutzer);
+      nutzerZahl++;
+      for (const regel of nutzer.regeln ?? []) {
+        if (!regel.aktiv) continue;
+        const o = ortVonRegel(regel, nutzer.lat, nutzer.lon);
+        const schluessel = ortsSchluessel(o);
+        if (!nachOrt.has(schluessel)) nachOrt.set(schluessel, { ort: o, auftraege: [] });
+        nachOrt.get(schluessel).auftraege.push({ nutzer, regel });
+      }
     }
 
     let pushs = 0, fehler = 0;
-    for (const [ort, nutzerliste] of nachOrt) {
+    const abgemeldet = new Set();
+    const stundenBucket = new Date().toISOString().slice(0, 13); // z. B. "2026-07-21T18"
+    for (const [schluessel, { ort, auftraege }] of nachOrt) {
       let vorhersage;
       try {
-        const [lat, lon] = ort.split(",").map(Number);
-        vorhersage = await holeVorhersageGecacht(lat, lon, env);
+        vorhersage = await holeVorhersageGecacht(ort.lat, ort.lon, env);
       } catch (f) {
-        console.log("Zeitplan: Wetter für", ort, "nicht verfügbar:", f.message);
+        console.log("Zeitplan: Wetter für", schluessel, "nicht verfügbar:", f.message);
         continue;
       }
       const jetztLokalMs = Date.now() + (vorhersage.utc_offset_seconds ?? 0) * 1000;
 
-      for (const nutzer of nutzerliste) {
+      for (const { nutzer, regel } of auftraege) {
+        if (abgemeldet.has(nutzer._schluessel)) continue;
         const kennung = nutzer._schluessel.slice("nutzer:".length);
-        const stundenBucket = new Date().toISOString().slice(0, 13); // z. B. "2026-07-21T18"
-        let abgemeldet = false;
-        for (const regel of nutzer.regeln ?? []) {
-          if (abgemeldet) break;
-          if (!regel.aktiv) continue;
-          const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
-          const tage = Object.keys(gefunden).sort();
-          if (!tage.length) continue;
-          // "stuendlich": nur der nächste Treffer, dafür jede Stunde erneut;
-          // "taeglich" (Standard): jeder Tag höchstens einmal.
-          const stuendlich = (regel.haeufigkeit || "taeglich") === "stuendlich";
-          const ziele = stuendlich ? [tage[0]] : tage;
-          for (const datum of ziele) {
-            const merker = stuendlich
-              ? "gesendet:" + kennung + ":" + regel.name + ":H:" + stundenBucket
-              : "gesendet:" + kennung + ":" + regel.name + ":" + datum;
-            if (await env.SPEICHER.get(merker)) continue;   // in diesem Zeitraum schon gemeldet
-            try {
-              const antwort = await sendeNachricht(nutzer.abo,
-                (regel.emoji || "🔔") + " " + regel.name,
-                blockZuText(datum, gefunden[datum]), env);
-              if (antwort.status === 404 || antwort.status === 410) {
-                await env.SPEICHER.delete(nutzer._schluessel);  // Abo weg -> austragen
-                fehler++; abgemeldet = true; break;
-              }
-              if (antwort.ok || antwort.status === 201) {
-                pushs++;
-                await env.SPEICHER.put(merker, "1", { expirationTtl: stuendlich ? 2 * 3600 : GESENDET_ABLAUF_SEK });
-              } else { fehler++; }
-            } catch { fehler++; }
-          }
+        const gefunden = findeTreffer(regel, vorhersage, jetztLokalMs);
+        const tage = Object.keys(gefunden).sort();
+        if (!tage.length) continue;
+        // "stuendlich": nur der nächste Treffer, dafür jede Stunde erneut;
+        // "taeglich" (Standard): jeder Tag höchstens einmal.
+        const stuendlich = (regel.haeufigkeit || "taeglich") === "stuendlich";
+        const ziele = stuendlich ? [tage[0]] : tage;
+        for (const datum of ziele) {
+          const merker = stuendlich
+            ? "gesendet:" + kennung + ":" + regel.name + ":H:" + stundenBucket
+            : "gesendet:" + kennung + ":" + regel.name + ":" + datum;
+          if (await env.SPEICHER.get(merker)) continue;   // in diesem Zeitraum schon gemeldet
+          try {
+            // Die Nachricht nennt nie einen Ort – nur Regel, Tag und Uhrzeit.
+            const antwort = await sendeNachricht(nutzer.abo,
+              (regel.emoji || "🔔") + " " + regel.name,
+              blockZuText(datum, gefunden[datum]), env);
+            if (antwort.status === 404 || antwort.status === 410) {
+              await env.SPEICHER.delete(nutzer._schluessel);  // Abo weg -> austragen
+              abgemeldet.add(nutzer._schluessel);
+              fehler++; break;
+            }
+            if (antwort.ok || antwort.status === 201) {
+              pushs++;
+              await env.SPEICHER.put(merker, "1", { expirationTtl: stuendlich ? 2 * 3600 : GESENDET_ABLAUF_SEK });
+            } else { fehler++; }
+          } catch { fehler++; }
         }
       }
     }
-    console.log("Zeitplan fertig:", nachOrt.size, "Orte,", liste.keys.length, "Nutzer,", pushs, "Pushs,", fehler, "Fehler.");
+    console.log("Zeitplan fertig:", nachOrt.size, "Orte,", nutzerZahl, "Nutzer,", pushs, "Pushs,", fehler, "Fehler.");
   },
 };
