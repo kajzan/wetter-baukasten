@@ -31,6 +31,7 @@ import { findeTreffer, holeVorhersage, blockZuText, tagesZusammenfassung,
 import { sendeWebPush } from "./webpush.js";
 import { appSeite } from "./seite.js";
 import { alteAppSeite } from "./seite_alt.js";
+import { bedingungenSeite, anbieterAus, BEDINGUNGEN_VERSION } from "./rechtliches.js";
 import { baukastenSeite } from "./baukasten.js";
 
 // Öffentlicher VAPID-Schlüssel (darf öffentlich sein). Der private liegt
@@ -158,8 +159,13 @@ export default {
     if (anfrage.method === "GET") {
       // no-cache: die Seiten aendern sich haeufig, sonst zeigt der Browser
       // (vor allem Safari) noch tagelang die alte Fassung.
-      if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC, appStand(env)), {
+      if (pfad === "/") return new Response(appSeite(VAPID_PUBLIC, appStand(env), BEDINGUNGEN_VERSION), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+      // Nutzungsbedingungen (Deutsch maßgeblich, Englisch als Übersetzung)
+      if (pfad === "/nutzungsbedingungen" || pfad === "/terms") {
+        return new Response(bedingungenSeite(pfad === "/terms" ? "en" : "de", anbieterAus(env)), {
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+      }
       // Bisherige Oberfläche als Rückfall, solange die neue frisch ist
       if (pfad === "/alt") return new Response(alteAppSeite(VAPID_PUBLIC, appStand(env)), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });

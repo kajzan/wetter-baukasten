@@ -17,7 +17,7 @@
 
 import { BAUSTEINE_CSS, BAUSTEINE_JS } from "./bausteine_ui.js";
 
-export function appSeite(vapidPublic, appStand = "") {
+export function appSeite(vapidPublic, appStand = "", bedingungenVersion = "") {
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -259,7 +259,9 @@ export function appSeite(vapidPublic, appStand = "") {
   .ort-eintrag b { display:block; font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ort-eintrag small { color:var(--text2); font-size:.78rem; }
   .schild { font-size:.68rem; font-weight:750; background:var(--akzent-hell); color:var(--akzent); padding:2px 7px; border-radius:99px; margin-left:4px; vertical-align:1px; }
-  .klein-knopf { border:1px solid var(--linie); background:var(--karte); border-radius:10px; padding:6px 10px; font-size:.8rem; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .klein-knopf { border:1px solid var(--linie); background:var(--karte); border-radius:10px; padding:6px 10px; font-size:.8rem; font-weight:600; cursor:pointer; white-space:nowrap; color:var(--text); text-decoration:none; }
+  .zustimmung { font-size:.84rem; color:var(--text2); text-align:center; margin:12px 0 0; }
+  .zustimmung a { color:var(--akzent); }
   #ort-ergebnisse button { display:block; width:100%; text-align:left; background:var(--karte); border:1px solid var(--linie);
     border-radius:12px; padding:10px 12px; margin-top:6px; color:var(--text); font-size:.92rem; cursor:pointer; }
   .ortskarte { height:240px; border-radius:16px; margin-top:12px; overflow:hidden; z-index:0; background:var(--hg); }
@@ -420,6 +422,13 @@ ${BAUSTEINE_CSS}
       <div class="groessen" id="schrift-wahl"></div>
     </section>
     <section class="karte">
+      <h2>Rechtliches</h2>
+      <div class="ort-liste">
+        <div class="ort-eintrag"><div class="txt"><b>Nutzungsbedingungen</b><small id="zustimmung-stand"></small></div>
+          <a class="klein-knopf" href="/nutzungsbedingungen">Deutsch</a><a class="klein-knopf" href="/terms" lang="en">English</a></div>
+      </div>
+    </section>
+    <section class="karte">
       <h2>Daten</h2>
       <p class="hinweis" style="margin-top:0">Alles auf diesem Gerät löschen und vom Wächter abmelden.</p>
       <button class="knopf rot" id="loeschen" type="button">Alles löschen</button>
@@ -435,7 +444,7 @@ ${BAUSTEINE_CSS}
           <li><b>Wetter</b> – 7 Tage mit Stundenwerten für jeden deiner Orte.</li>
           <li><b>Datenschutz</b> – der genaue Ort bleibt auf diesem Gerät. Zum Dienst und zum Wetteranbieter geht nur ein auf ~11 km gerundeter Wert.</li>
         </ul>
-        <p class="hinweis" style="margin:8px 0 0">Kostenlos · Wetterdaten: Open-Meteo · Karte: OpenStreetMap · Ortsname: BigDataCloud</p>
+        <p class="hinweis" style="margin:8px 0 0">Kostenlos · Wetterdaten: Open-Meteo (CC BY 4.0) · Karte: © OpenStreetMap-Mitwirkende</p>
       </details>
     </section>
     <p class="app-stand" id="app-stand"></p>
@@ -456,6 +465,7 @@ ${BAUSTEINE_CSS}
 "use strict";
 var VAPID_PUBLIC = "${vapidPublic}";
 var APP_STAND = "${appStand}";   // Veröffentlichungszeitpunkt dieser Fassung (leer, wenn unbekannt)
+var BEDINGUNGEN = "${bedingungenVersion}";   // Fassung der Nutzungsbedingungen, der zugestimmt werden muss
 
 /* ---------- Symbole (Linien-Icons statt Emojis in der Bedienung) ---------- */
 var IC = {
@@ -1284,19 +1294,12 @@ function oeffneOrtBlatt(id, fuerRegel) {
   }
   function setzePunkt(lat, lon, name, zoom) {
     punkt = { lat: genau(lat), lon: genau(lon) };
-    if (name) { stadt = name; if (nameAuto || !$("ob-name").value.trim()) { $("ob-name").value = zustand.orte.length ? name : "Zuhause"; } }
-    else namensVorschlag();
+    // Den Namen gibt die Suche mit; bei Standort und Karte vergibst du ihn selbst
+    stadt = name || "";
+    if (name && (nameAuto || !$("ob-name").value.trim())) $("ob-name").value = zustand.orte.length ? name : "Zuhause";
+    if (!name && !$("ob-name").value.trim()) $("ob-name").focus();
     if (ortsKarte) ortsKarte.setView([punkt.lat, punkt.lon], zoom || Math.max(ortsKarte.getZoom(), 13));
     zeigePunkt(); tick();
-  }
-  // Ortsname nur aus dem GERUNDETEN Punkt ermitteln – der genaue bleibt hier
-  function namensVorschlag() {
-    fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + grob(punkt.lat) + "&longitude=" + grob(punkt.lon) + "&localityLanguage=de")
-      .then(function (a) { return a.json(); }).then(function (d) {
-        stadt = d.city || d.locality || d.principalSubdivision || "";
-        if (stadt && (nameAuto || !$("ob-name").value.trim()) && zustand.orte.length) $("ob-name").value = stadt;
-        zeigePunkt();
-      }).catch(function () {});
   }
   $("ob-gps").addEventListener("click", function () {
     var k = this;
@@ -1328,7 +1331,7 @@ function oeffneOrtBlatt(id, fuerRegel) {
   $("ob-ok").addEventListener("click", function () {
     if (!punkt) return;
     gespeichert = true;
-    var name = ($("ob-name").value || "").trim() || stadt || "Ort";
+    var name = ($("ob-name").value || "").trim() || stadt || "Mein Ort";
     var o = vorhanden;
     if (!o) { o = { id: neueOrtId() }; zustand.orte.push(o); if (!zustand.standardOrt) zustand.standardOrt = o.id; }
     o.name = name.slice(0, 30); o.stadt = stadt.slice(0, 60); o.lat = punkt.lat; o.lon = punkt.lon;
@@ -1607,7 +1610,7 @@ function balkenDiagramm(titel, einheit, std, werte, farbe, jetztIndex, gross, da
 
 /* ---------- Einstellungen ---------- */
 function zeichneEinstellungen() {
-  ortEintraege($("einst-orte"), zeichneEinstellungen);
+  ortEintraege($("einst-orte"), zeichneEinstellungen); zeichneZustimmung();
   zeichneSchriftwahl(); zeichneModusSchalter(); zeichneAppStand();
 }
 function zeichneModusSchalter() {
@@ -1694,6 +1697,28 @@ $("loeschen").addEventListener("click", function () {
   } else { fertig(); }
 });
 
+/* ---------- Nutzungsbedingungen ---------- */
+function bedingungenLink() { return (navigator.language || "de").toLowerCase().indexOf("de") === 0 ? "/nutzungsbedingungen" : "/terms"; }
+function zugestimmt() { return !BEDINGUNGEN || (zustand.bedingungen && zustand.bedingungen.version === BEDINGUNGEN); }
+function stimmeZu() { zustand.bedingungen = { version: BEDINGUNGEN, zeit: new Date().toISOString() }; speichere(); zeichneZustimmung(); }
+function zeichneZustimmung() {
+  var z = zustand.bedingungen, el = $("zustimmung-stand"); if (!el) return;
+  el.textContent = zugestimmt() && z ? "Zugestimmt am " + new Date(z.zeit).toLocaleDateString("de-DE") + " (Fassung " + z.version + ")" : "Noch nicht zugestimmt";
+}
+/* Bisherige Nutzer werden einmal gefragt – und erneut, wenn sich die Bedingungen ändern */
+function frageNachZustimmung() {
+  var neu = !!zustand.bedingungen;
+  var ziel = oeffneBlatt(neu ? "Geänderte Nutzungsbedingungen" : "Nutzungsbedingungen");
+  ziel.innerHTML = '<p style="margin:4px 0 12px">' + (neu ? "Die Nutzungsbedingungen haben sich geändert." : "Für den Wetter-Wächter gibt es jetzt Nutzungsbedingungen.")
+    + ' Bitte lies sie und stimme zu. Das Wichtigste in Kürze:</p>'
+    + '<ul style="margin:0 0 14px;padding-left:20px;line-height:1.55"><li>Die App ist derzeit kostenlos.</li>'
+    + '<li>Sie ist <b>kein amtlicher Warndienst</b> – Vorhersagen können danebenliegen.</li>'
+    + '<li>Dein genauer Ort bleibt auf dem Gerät; zum Dienst geht nur ein gerundeter Wert.</li></ul>'
+    + '<a class="knopf zart breit" href="' + bedingungenLink() + '" style="text-decoration:none">Nutzungsbedingungen lesen</a>'
+    + '<button class="knopf breit gross" type="button" id="nb-ok" style="margin-top:10px">Zustimmen</button>';
+  $("nb-ok").addEventListener("click", function () { stimmeZu(); tick(); toast("Danke!"); schliesseBlatt(); });
+}
+
 /* ---------- Erster Start: Ort, Wünsche, Benachrichtigung ---------- */
 function zeigeStart(schritt) {
   var alt = document.querySelector(".start"); if (alt) alt.remove();
@@ -1705,7 +1730,8 @@ function zeigeStart(schritt) {
     karte.innerHTML = '<h2>Pizza auf dem Balkon, Wäsche draußen, Laufen im Trockenen?</h2>'
       + '<p>Sag mir, was du vorhast – ich prüfe jede Stunde das Wetter und melde mich, sobald es passt.</p>'
       + '<button class="knopf breit gross" type="button" id="st-los">Los geht’s</button>'
-      + '<p class="hinweis" style="margin:12px 0 0;text-align:center">Kostenlos · ohne Konto · dein genauer Ort bleibt auf dem Gerät</p>';
+      + '<p class="zustimmung">Mit „Los geht’s“ stimmst du den <a href="' + bedingungenLink() + '">Nutzungsbedingungen</a> zu.</p>'
+      + '<p class="hinweis" style="margin:6px 0 0;text-align:center">Kostenlos · ohne Konto · dein genauer Ort bleibt auf dem Gerät</p>';
   } else if (schritt === 1) {
     karte.innerHTML = punkte + '<h2>Wo bist du zu Hause?</h2><p>Dort schaue ich nach dem Wetter. Weitere Orte kannst du später anlegen.</p>'
       + '<button class="knopf breit gross" type="button" id="st-gps">' + ic("ziel") + 'Meinen Standort verwenden</button>'
@@ -1723,13 +1749,11 @@ function zeigeStart(schritt) {
   }
   el.innerHTML = titel; el.appendChild(karte);
   document.body.appendChild(el); document.body.classList.add("start-modus");
-  if (schritt === 0) $("st-los").addEventListener("click", function () { tick(); zeigeStart(1); });
+  if (schritt === 0) $("st-los").addEventListener("click", function () { stimmeZu(); tick(); zeigeStart(1); });
   if (schritt === 1) {
     var ortGesetzt = function (lat, lon, stadt) {
       zustand.orte = [{ id:"o1", name:"Zuhause", stadt:stadt || "", lat:genau(lat), lon:genau(lon) }];
       zustand.standardOrt = "o1"; speichere(); tick(); aktualisiereVorschau(); zeigeStart(2);
-      if (!stadt) fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + grob(lat) + "&longitude=" + grob(lon) + "&localityLanguage=de")
-        .then(function (a) { return a.json(); }).then(function (d) { var o = ortMitId("o1"); if (o) { o.stadt = d.city || d.locality || d.principalSubdivision || ""; speichere(); zeichneKopf(); } }).catch(function () {});
     };
     $("st-gps").addEventListener("click", function () {
       var k = this;
@@ -1785,6 +1809,7 @@ zeichneUebersicht();
 setzeHintergrund(); setInterval(function () { setzeHintergrund(); zeichneKopf(); }, 5 * 60 * 1000);
 aktualisiereVorschau();
 if (!zustand.willkommenGesehen || !standardOrt()) zeigeStart(standardOrt() ? 2 : 0);
+else if (!zugestimmt()) frageNachZustimmung();
 </script>
 </body>
 </html>`;
