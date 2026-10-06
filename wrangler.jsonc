@@ -4,6 +4,9 @@
   "name": "wetter-baukasten",
   "main": "server/worker.js",
   "compatibility_date": "2026-07-01",
+  // Variablen, die im Cloudflare-Dashboard eingetragen werden (z. B. Anbieter-
+  // angaben für die Nutzungsbedingungen), beim Veröffentlichen NICHT löschen.
+  "keep_vars": true,
   "triggers": {
     // stündliche Wetter-Prüfung (Minute 23, wie beim bisherigen Wächter)
     "crons": ["23 * * * *"]
