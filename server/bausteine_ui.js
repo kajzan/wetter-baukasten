@@ -236,7 +236,7 @@ function grundZeile(g) {
   var abstand = Math.abs(g.ist - g.grenze);
   /* „Haarscharf“ heißt: gemessen an der Grenze selbst nur ein Zehntel daneben
      (bei Grenzen um null greift ein kleiner Anteil der Skala). */
-  var knappDran = abstand <= Math.max((a.max - a.min) * 0.02, Math.abs(g.grenze) * 0.1);
+  var knappDran = teilKnapp(g);
   var wort = g.richtung === "min" ? "zu wenig" : "zu viel";
   return a.emoji + " <b>" + a.bez + " " + zahlText(g.ist) + e + "</b> – "
     + '<span class="luecke' + (knappDran ? " fast" : "") + '">' + luecken(abstand, g.art) + " " + wort + "</span>"
@@ -279,11 +279,24 @@ function grundKurz(k) {
   return l.slice(0, 2).join(", ") + (l.length > 2 ? " +" + (l.length - 2) : "");
 }
 /* „Knapp daneben“: nur ein Grund, und der ist haarscharf (wie in grundZeile) */
+/* „Knapp daneben“: Spielraum je Wetterart, so wie man ihn im Alltag noch
+   hinnimmt (2–3 Grad zu kühl macht die Pizza nicht kaputt). Bei Werten mit
+   großer Spanne zählt zusätzlich ein Anteil der Grenze (Wind 30 statt 25 km/h). */
+var TOLERANZ = { temp:[3, 0], wind:[5, 0.25], boe:[8, 0.2], regen:[0.3, 0], bewoelkung:[15, 0], feuchte:[10, 0], uv:[1, 0] };
+function teilKnapp(g) {
+  if (g.art === "windrichtung") {
+    // Nachbarrichtung zählt als knapp (z. B. NO statt N)
+    var i = SEKTOREN.indexOf(g.ist);
+    return i >= 0 && (g.sektoren || []).some(function (s) { var j = SEKTOREN.indexOf(s); return Math.min((i - j + 8) % 8, (j - i + 8) % 8) === 1; });
+  }
+  var t = TOLERANZ[g.art]; if (!t) return false;
+  return Math.abs(g.ist - g.grenze) <= Math.max(t[0], Math.abs(g.grenze) * t[1]) + 1e-9;
+}
 function istKnapp(k) {
-  if (!k || k.dauer || !k.fehlend || k.fehlend.length !== 1) return false;
-  var g = k.fehlend[0], a = ARTEN[g.art];
-  if (!a || g.art === "windrichtung") return false;
-  return Math.abs(g.ist - g.grenze) <= Math.max((a.max - a.min) * 0.02, Math.abs(g.grenze) * 0.1);
+  if (!k) return false;
+  if (k.dauer) return k.gebraucht - k.dauer <= 1;          // nur eine Stunde zu kurz
+  if (!k.fehlend || !k.fehlend.length || k.fehlend.length > 2) return false;
+  return k.fehlend.every(teilKnapp);                        // höchstens zwei Gründe, beide knapp
 }
 function standHtml(stand) {
   var gut = stand.filter(function (t) { return t.treffer; }).length;

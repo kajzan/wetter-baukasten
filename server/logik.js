@@ -233,6 +233,17 @@ function zeitpunktText(zeitMs) {
    Rückgabe (oder null, wenn es gar keine prüfbare Stunde gibt):
      { wann, fehlend:[ {art, ist, grenze, richtung} | {art:"windrichtung", ist, sektoren} ] }
      { wann, dauer, gebraucht }   – alles passt, aber nicht lang genug am Stück */
+/* „Knapp daneben“ – gleicher Spielraum wie in der Anzeige (bausteine_ui.js). */
+const TOLERANZ = { temp: [3, 0], wind: [5, 0.25], boe: [8, 0.2], regen: [0.3, 0], bewoelkung: [15, 0], feuchte: [10, 0], uv: [1, 0] };
+export function grundKnapp(g) {
+  if (g.art === "windrichtung") {
+    const i = SEKTOR_NAMEN.indexOf(g.ist);
+    return i >= 0 && (g.sektoren || []).some((s) => { const j = SEKTOR_NAMEN.indexOf(s); return Math.min((i - j + 8) % 8, (j - i + 8) % 8) === 1; });
+  }
+  const t = TOLERANZ[g.art]; if (!t) return false;
+  return Math.abs(g.ist - g.grenze) <= Math.max(t[0], Math.abs(g.grenze) * t[1]) + 1e-9;
+}
+
 export function findeKnapp(regel, vorhersage, jetztLokalMs, nurDatum = null) {
   const bausteine = Array.isArray(regel.bausteine) && regel.bausteine.length
     ? regel.bausteine : bausteineAusBedingungen(regel.bedingungen ?? {});
@@ -264,6 +275,9 @@ export function findeKnapp(regel, vorhersage, jetztLokalMs, nurDatum = null) {
       if (a.grund) fehlend.push(a.grund);
       punkte += 1 + relativerAbstand(a.grund && a.grund.art, a.abstand);
     }
+    // Stunden, die nur „knapp daneben“ liegen, gehen immer vor – auch vor
+    // einer Stunde mit nur einem, aber großen Fehler.
+    if (fehlend.length && fehlend.length <= 2 && fehlend.every(grundKnapp)) punkte -= 10;
 
     if (!fehlend.length) {
       // Diese Stunde passt – nur die Dauer könnte noch scheitern.
